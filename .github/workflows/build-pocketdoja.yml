@@ -291,6 +291,73 @@ jobs:
               '.putString(KEY_DEBUG, "disable")',
               '.putString(KEY_DEBUG, "enable")'
           )
+          # Import runs in HomeActivity's process, not EntryActivity's game
+          # process. Install a process-wide handler here as well, so a crash
+          # during folder/JAM import is saved before Android terminates the app.
+          home_marker = """    @Override
+              protected void onCreate(Bundle savedInstanceState) {"""
+          home_handler = """    private static volatile boolean pocketDoJaCrashHandlerInstalled;
+
+              private static synchronized void installPocketDoJaCrashReportHandler(android.content.Context context) {
+                  if (pocketDoJaCrashHandlerInstalled) return;
+                  pocketDoJaCrashHandlerInstalled = true;
+                  final android.content.Context app = context.getApplicationContext();
+                  final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+                  Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                      try {
+                          java.io.StringWriter trace = new java.io.StringWriter();
+                          throwable.printStackTrace(new java.io.PrintWriter(trace));
+                          String nl = System.getProperty("line.separator");
+                          String report = "PocketDoJa import/process crash report" + nl
+                                  + "time=" + new java.util.Date() + nl
+                                  + "thread=" + thread.getName() + nl
+                                  + "build=2026-11-22 api19 jam-crash-diagnostics" + nl + nl
+                                  + trace.toString();
+                          java.io.File[] destinations = {
+                                  new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                                          android.os.Environment.DIRECTORY_DOWNLOADS), "pocketdoja-crash.txt"),
+                                  new java.io.File(app.getExternalFilesDir(null), "pocketdoja-crash.txt"),
+                                  new java.io.File(app.getFilesDir(), "pocketdoja-crash.txt")
+                          };
+                          for (java.io.File destination : destinations) {
+                              try {
+                                  java.io.File parent = destination.getParentFile();
+                                  if (parent != null) parent.mkdirs();
+                                  try (java.io.FileWriter writer = new java.io.FileWriter(destination, false)) {
+                                      writer.write(report);
+                                      writer.flush();
+                                  }
+                                  android.util.Log.e("OpenDoJa", "Crash report saved: " + destination, throwable);
+                                  break;
+                              } catch (Throwable writeFailure) {
+                                  android.util.Log.e("OpenDoJa", "Could not save crash report: " + destination, writeFailure);
+                              }
+                          }
+                      } catch (Throwable reportFailure) {
+                          android.util.Log.e("OpenDoJa", "Crash report generation failed", reportFailure);
+                      }
+                      if (previous != null) {
+                          previous.uncaughtException(thread, throwable);
+                      } else {
+                          android.os.Process.killProcess(android.os.Process.myPid());
+                          System.exit(10);
+                      }
+                  });
+              }
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {"""
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              home_marker,
+              home_handler
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "        super.onCreate(savedInstanceState);",
+              "        super.onCreate(savedInstanceState);\\n        installPocketDoJaCrashReportHandler(this);"
+          )
+
           # Persist uncaught crashes before Android terminates the process. The
           # report is written synchronously so it survives an immediate FC and
           # can be retrieved without reopening PocketDoJa.
