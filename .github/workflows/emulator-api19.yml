@@ -71,12 +71,24 @@ jobs:
               -o game-assets/Fan-Translations-i-Appli.zip; then
               mkdir -p game-assets/extracted
               unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
-              find game-assets/extracted -type f \( -iname 'mhi_9.jar' -o -iname 'mhi_9.jam' -o -iname 'mhi_9.sp' \) -print
+              # Require the complete three-file DoJa package; partial staging
+              # must never be reported as a successful preparation check.
+              : > game-assets/SHA256SUMS
               for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
                 FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
-                if [ -n "$FOUND" ]; then
-                  adb push "$FOUND" "/sdcard/Download/$f"
+                if [ -z "$FOUND" ] || [ ! -s "$FOUND" ]; then
+                  echo "::error::Required Monster Hunter file is missing or empty: $f"
+                  find game-assets/extracted -type f -printf '%P (%s bytes)\\n' | head -200
+                  exit 1
                 fi
+                cp "$FOUND" "game-assets/$f"
+                sha256sum "game-assets/$f" >> game-assets/SHA256SUMS
+                adb push "game-assets/$f" "/sdcard/Download/$f"
+              done
+              adb shell ls -l /sdcard/Download/mhi_9.jar /sdcard/Download/mhi_9.jam /sdcard/Download/mhi_9.sp
+            else
+              echo "::error::Could not retrieve the Archive.org game ZIP; refusing to mark DoJa preparation successful."
+              exit 1
               done
             else
               echo "::warning::Could not retrieve the Archive.org game ZIP; emulator launch smoke test will still be recorded."
