@@ -294,7 +294,7 @@ jobs:
           # Import runs in HomeActivity's process, not EntryActivity's game
           # process. Install a process-wide handler here as well, so a crash
           # during folder/JAM import is saved before Android terminates the app.
-          home_marker = "    @Override\n    protected void onCreate(Bundle savedInstanceState) {"
+          home_marker = "    @Override" + chr(10) + "    protected void onCreate(Bundle savedInstanceState) {"
           home_handler = """    private static volatile boolean pocketDoJaCrashHandlerInstalled;
 
               private static synchronized void installPocketDoJaCrashReportHandler(android.content.Context context) {
@@ -354,7 +354,7 @@ jobs:
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
               "        super.onCreate(savedInstanceState);",
-              "        super.onCreate(savedInstanceState);\n        installPocketDoJaCrashReportHandler(this);"
+              "        super.onCreate(savedInstanceState);" + chr(10) + "        installPocketDoJaCrashReportHandler(this)"
           )
 
           # Persist uncaught crashes before Android terminates the process. The
