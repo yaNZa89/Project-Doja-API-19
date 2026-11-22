@@ -354,7 +354,7 @@ jobs:
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
               "        super.onCreate(savedInstanceState);",
-              "        super.onCreate(savedInstanceState);" + chr(10) + "        installPocketDoJaCrashReportHandler(this)"
+              "        super.onCreate(savedInstanceState);" + chr(10) + "        installPocketDoJaCrashReportHandler(this);"
           )
 
           # Persist uncaught crashes before Android terminates the process. The
