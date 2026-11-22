@@ -110,7 +110,7 @@ jobs:
             > "$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
           test -s "$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
 
-      - name: Adapt D8 input: package compiled classes as JAR
+      - name: "Adapt D8 input: package compiled classes as JAR"
         shell: bash
         run: |
           set -euo pipefail
