@@ -291,16 +291,73 @@ jobs:
               '.putString(KEY_DEBUG, "disable")',
               '.putString(KEY_DEBUG, "enable")'
           )
+          # Persist uncaught crashes before Android terminates the process. The
+          # report is written synchronously so it survives an immediate FC and
+          # can be retrieved without reopening PocketDoJa.
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "installCrashGuard();",
+              "installCrashGuard(this);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "private static synchronized void installCrashGuard() {",
+              "private static synchronized void installCrashGuard(android.app.Activity activity) {"
+          )
           old_crash_handler = "previousCrashHandler.uncaughtException(thread, throwable);"
           new_crash_handler = """try {
                       android.util.Log.e("OpenDoJa", "uncaught exception on thread " + thread.getName(), throwable);
                   } catch (Throwable ignored) {
                   }
-                  previousCrashHandler.uncaughtException(thread, throwable);"""
+                  try {
+                      java.io.StringWriter trace = new java.io.StringWriter();
+                      throwable.printStackTrace(new java.io.PrintWriter(trace));
+                      String report = "PocketDoJa crash report\\n"
+                              + "time=" + new java.util.Date() + "\\n"
+                              + "thread=" + thread.getName() + "\\n"
+                              + "build=2026-11-22 api19 jam-crash-diagnostics\\n\\n"
+                              + trace.toString();
+                      java.io.File[] destinations = {
+                              new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                                      android.os.Environment.DIRECTORY_DOWNLOADS), "pocketdoja-crash.txt"),
+                              new java.io.File(crashContext.getExternalFilesDir(null), "pocketdoja-crash.txt"),
+                              new java.io.File(crashContext.getFilesDir(), "pocketdoja-crash.txt")
+                      };
+                      boolean saved = false;
+                      for (java.io.File destination : destinations) {
+                          try {
+                              java.io.File parent = destination.getParentFile();
+                              if (parent != null) parent.mkdirs();
+                              try (java.io.FileWriter writer = new java.io.FileWriter(destination, false)) {
+                                  writer.write(report);
+                                  writer.flush();
+                              }
+                              android.util.Log.e("OpenDoJa", "Crash report saved: " + destination);
+                              saved = true;
+                              break;
+                          } catch (Throwable writeFailure) {
+                              android.util.Log.e("OpenDoJa", "Could not save crash report to " + destination, writeFailure);
+                          }
+                      }
+                      if (!saved) android.util.Log.e("OpenDoJa", "Crash report could not be persisted.");
+                  } catch (Throwable reportFailure) {
+                      android.util.Log.e("OpenDoJa", "Crash report generation failed.", reportFailure);
+                  }
+                  if (previousCrashHandler != null) {
+                      previousCrashHandler.uncaughtException(thread, throwable);
+                  } else {
+                      android.os.Process.killProcess(android.os.Process.myPid());
+                      System.exit(10);
+                  }"""
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
               old_crash_handler,
               new_crash_handler
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();",
+              "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();\\n        final android.content.Context crashContext = activity.getApplicationContext();"
           )
 
           print("Applied temporary crash diagnostics and enabled in-app report export.")
