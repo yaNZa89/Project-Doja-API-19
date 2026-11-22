@@ -110,6 +110,61 @@ jobs:
             > "$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
           test -s "$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
 
+      - name: Adapt D8 input: package compiled classes as JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          REAL_JAVA_HOME="$JAVA_HOME"
+          WRAPPER_HOME="$RUNNER_TEMP/pocketdoja-java-wrapper"
+          mkdir -p "$WRAPPER_HOME/bin"
+
+          # Keep the real JDK tools available while intercepting java calls
+          # that invoke D8, including calls made through $JAVA_HOME/bin/java.
+          for tool in "$REAL_JAVA_HOME"/bin/*; do
+            [ -e "$tool" ] || continue
+            name="$(basename "$tool")"
+            [ "$name" = "java" ] && continue
+            ln -sfn "$tool" "$WRAPPER_HOME/bin/$name"
+          done
+
+          cat > "$WRAPPER_HOME/bin/java" <<'JAVA_WRAPPER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          REAL_JAVA="$POCKETDOJA_REAL_JAVA_HOME/bin/java"
+          args=("$@")
+          is_d8=0
+          for arg in "${args[@]}"; do
+            case "$arg" in
+              com.android.tools.r8.D8|com.android.tools.r8.D8*) is_d8=1 ;;
+            esac
+          done
+
+          if [[ "$is_d8" -eq 1 ]]; then
+            for i in "${!args[@]}"; do
+              input="${args[$i]}"
+              case "$input" in
+                */build-manual/classes|build-manual/classes)
+                  if [[ -d "$input" ]]; then
+                    jar_path="${input%/classes}/app-classes.jar"
+                    [[ "$jar_path" != "$input" ]] || jar_path="build-manual/app-classes.jar"
+                    rm -f "$jar_path"
+                    "$POCKETDOJA_REAL_JAVA_HOME/bin/jar" cf "$jar_path" -C "$input" .
+                    test -s "$jar_path"
+                    args[$i]="$jar_path"
+                    echo "::notice::D8 input directory packaged as JAR: $jar_path"
+                  fi
+                  ;;
+              esac
+            done
+          fi
+          exec "$REAL_JAVA" "${args[@]}"
+          JAVA_WRAPPER
+          chmod +x "$WRAPPER_HOME/bin/java"
+
+          echo "POCKETDOJA_REAL_JAVA_HOME=$REAL_JAVA_HOME" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$WRAPPER_HOME" >> "$GITHUB_ENV"
+          echo "$WRAPPER_HOME/bin" >> "$GITHUB_PATH"
+
       - name: Build Android 4.4 API 19 debug APK
         shell: bash
         run: |
