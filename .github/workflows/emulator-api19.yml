@@ -31,13 +31,16 @@ jobs:
           target: default
           arch: x86
           profile: Nexus 5
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu off -no-snapshot -wipe-data
+          emulator-boot-timeout: 1200
+          disable-linux-hw-accel: true
           disable-animations: true
           script: |
             set -euo pipefail
+            mkdir -p diagnostics game-assets
             APK="$(find apk -type f -name '*.apk' -print -quit)"
             test -n "$APK"
-            echo "APK=$APK"
+            echo "APK=$APK" | tee diagnostics/apk-info.txt
             adb wait-for-device
             adb install -r "$APK"
 
@@ -46,32 +49,28 @@ jobs:
             ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
             if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
               echo "::error::Could not determine APK package/launch activity."
-              printf '%s\n' "$BADGING"
+              printf '%s\n' "$BADGING" | tee diagnostics/apk-badging.txt
               exit 1
             fi
-            echo "Package: $PACKAGE"
-            echo "Launch activity: $ACTIVITY"
+            printf 'Package: %s\nLaunch activity: %s\n' "$PACKAGE" "$ACTIVITY" | tee diagnostics/apk-info.txt
 
             adb shell am force-stop "$PACKAGE" || true
             adb shell am start -W -n "$PACKAGE/$ACTIVITY"
             sleep 12
-            adb shell dumpsys activity activities > activity-after-launch.txt
-            adb shell dumpsys window windows > windows-after-launch.txt
+            adb shell dumpsys activity activities > diagnostics/activity-after-launch.txt
+            adb shell dumpsys window windows > diagnostics/windows-after-launch.txt
             if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
               echo "::error::PocketDoJa process died after launch on API 19."
-              adb logcat -d -v threadtime > logcat-launch-failure.txt
+              adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt
               exit 1
             fi
 
-            # Try to obtain the exact Monster Hunter i-appli files used in the
-            # user's report. Staging is separate from importing them in the UI.
-            mkdir -p game-assets
+            # Stage the reported Monster Hunter files. This does not claim JAM import was tested.
             if curl -fL --retry 2 --connect-timeout 20 \
               'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
               -o game-assets/Fan-Translations-i-Appli.zip; then
               mkdir -p game-assets/extracted
               unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
-              # Require all three game files; partial staging is a failure.
               : > game-assets/SHA256SUMS
               for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
                 FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
@@ -86,30 +85,53 @@ jobs:
               done
               adb shell ls -l /sdcard/Download/mhi_9.jar /sdcard/Download/mhi_9.jam /sdcard/Download/mhi_9.sp
             else
-              echo "::error::Could not retrieve the Archive.org game ZIP; DoJa test preparation cannot continue."
+              echo "::error::Could not retrieve the Archive.org game ZIP."
               exit 1
             fi
 
-            # Capture the emulator's visible UI and logs for the next targeted
-            # import-automation step. No claim is made that JAM import was tested.
             adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
-            adb pull /sdcard/window.xml emulator-window.xml || true
+            adb pull /sdcard/window.xml diagnostics/emulator-window.xml || true
             adb shell screencap -p /sdcard/screen.png
-            adb pull /sdcard/screen.png emulator-screen.png
-            adb logcat -d -v threadtime > logcat-api19.txt
+            adb pull /sdcard/screen.png diagnostics/emulator-screen.png
+            adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
             echo "API 19 install-and-launch smoke test passed."
-      - name: Upload emulator evidence
+
+      - name: Collect runner and emulator diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p diagnostics
+          {
+            echo "PocketDoJa API 19 runner diagnostics"
+            date -u
+            echo
+            echo "=== ADB devices ==="
+            adb devices -l 2>&1 || true
+            echo
+            echo "=== KVM availability ==="
+            ls -l /dev/kvm 2>&1 || true
+            echo
+            echo "=== Emulator processes ==="
+            pgrep -af 'emulator|qemu|adb' || true
+            echo
+            echo "=== AVD files ==="
+            find "$HOME/.android/avd" -maxdepth 3 -type f -printf '%p (%s bytes)\n' 2>&1 | head -200 || true
+            echo
+            echo "=== Recent emulator logs ==="
+            find "$HOME/.android" -type f \( -iname '*emulator*.log' -o -iname 'emulator*.txt' \) -print 2>/dev/null | head -30
+            echo
+            echo "=== SDK emulator version ==="
+            "$ANDROID_HOME/emulator/emulator" -version 2>&1 || true
+          } > diagnostics/runner-diagnostics.txt
+          cat diagnostics/runner-diagnostics.txt
+
+      - name: Upload emulator evidence and TXT diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pocketdoja-api19-emulator-evidence
+          name: pocketdoja-api19-diagnostics
           path: |
-            emulator-window.xml
-            emulator-screen.png
-            logcat-api19.txt
-            logcat-launch-failure.txt
-            activity-after-launch.txt
-            windows-after-launch.txt
+            diagnostics/
             game-assets/
           if-no-files-found: warn
           retention-days: 14
