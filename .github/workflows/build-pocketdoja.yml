@@ -356,6 +356,32 @@ jobs:
               "        super.onCreate(savedInstanceState);",
               "        super.onCreate(savedInstanceState);" + chr(10) + "        installPocketDoJaCrashReportHandler(this);"
           )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "ImportResult r = importJamFolder(treeUri, folder.documentId);",
+              """ImportResult r;
+                  try {
+                      r = importJamFolder(treeUri, folder.documentId);
+                  } catch (Exception importFailure) {
+                      opendoja.host.OpenDoJaLog.warn(HomeActivity.class, "JAM folder import failed unexpectedly", importFailure);
+                      r = new ImportResult();
+                      r.failed++;
+                      r.errors.add("Import failed: " + importFailure.getClass().getSimpleName() + ": " + importFailure.getMessage());
+                  }"""
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "ImportResult r = importJamFolderFromFile(folder);",
+              """ImportResult r;
+                                      try {
+                                          r = importJamFolderFromFile(folder);
+                                      } catch (Exception importFailure) {
+                                          opendoja.host.OpenDoJaLog.warn(HomeActivity.class, "JAM file import failed unexpectedly", importFailure);
+                                          r = new ImportResult();
+                                          r.failed++;
+                                          r.errors.add("Import failed: " + importFailure.getClass().getSimpleName() + ": " + importFailure.getMessage());
+                                      }"""
+          )
 
           # Persist uncaught crashes before Android terminates the process. The
           # report is written synchronously so it survives an immediate FC and
