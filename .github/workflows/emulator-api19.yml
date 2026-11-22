@@ -24,80 +24,120 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Set up Android 4.4 emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 19
-          target: default
-          arch: x86
-          profile: Nexus One
-          # Keep the AVD small and allow KVM acceleration on Linux runners.
-          # A newly-created AVD is already clean; avoid an extra -wipe-data pass.
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2
-          emulator-boot-timeout: 900
-          disable-linux-hw-accel: false
-          disable-animations: true
-          script: |
-            set -euo pipefail
-            mkdir -p diagnostics game-assets
-            APK="$(find apk -type f -name '*.apk' -print -quit)"
-            test -n "$APK"
-            echo "APK=$APK" | tee diagnostics/apk-info.txt
-            adb wait-for-device
-            adb install -r "$APK"
-
-            BADGING="$(aapt dump badging "$APK")"
-            PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
-            ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
-            if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
-              echo "::error::Could not determine APK package/launch activity."
-              printf '%s\n' "$BADGING" | tee diagnostics/apk-badging.txt
-              exit 1
+      - name: Set up and boot Android 4.4 emulator
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p diagnostics
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::Android SDK is missing on this runner."
+            exit 1
+          fi
+          SDKMANAGER="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -1)"
+          AVDMANAGER="$(find "$SDK/cmdline-tools" -type f -name avdmanager 2>/dev/null | sort -V | tail -1)"
+          [ -n "$SDKMANAGER" ] && [ -n "$AVDMANAGER" ] || { echo "::error::SDK command-line tools missing"; exit 1; }
+          export PATH="$SDK/platform-tools:$SDK/emulator:$SDK/build-tools/35.0.0:$PATH"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/emulator" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platform-tools" "emulator" "build-tools;35.0.0" "system-images;android-19;default;x86"
+          echo "no" | "$AVDMANAGER" create avd -n pocketdoja-api19 -k "system-images;android-19;default;x86" -d "Nexus One" --force
+          ACCEL_ARGS=()
+          if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            ACCEL_ARGS=(-accel on)
+            echo "KVM available; hardware acceleration enabled."
+          else
+            ACCEL_ARGS=(-accel off)
+            echo "::warning::KVM unavailable; using software CPU emulation."
+          fi
+          "$SDK/emulator/emulator" -avd pocketdoja-api19 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -no-snapshot -wipe-data "${ACCEL_ARGS[@]}" > diagnostics/emulator-boot.log 2>&1 &
+          EMULATOR_PID=$!
+          echo "$EMULATOR_PID" > diagnostics/emulator.pid
+          booted=0
+          for attempt in $(seq 1 180); do
+            if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              echo "::error::Emulator process exited before boot completed."
+              break
             fi
-            printf 'Package: %s\nLaunch activity: %s\n' "$PACKAGE" "$ACTIVITY" | tee diagnostics/apk-info.txt
-
-            adb shell am force-stop "$PACKAGE" || true
-            adb shell am start -W -n "$PACKAGE/$ACTIVITY"
-            sleep 12
-            adb shell dumpsys activity activities > diagnostics/activity-after-launch.txt
-            adb shell dumpsys window windows > diagnostics/windows-after-launch.txt
-            if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
-              echo "::error::PocketDoJa process died after launch on API 19."
-              adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt
-              exit 1
+            if adb -e get-state >/dev/null 2>&1; then
+              state="$(adb -e shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+              if [ "$state" = "1" ]; then booted=1; break; fi
             fi
-
-            # Stage the reported Monster Hunter files. This does not claim JAM import was tested.
-            if curl -fL --retry 2 --connect-timeout 20 \
-              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
-              -o game-assets/Fan-Translations-i-Appli.zip; then
-              mkdir -p game-assets/extracted
-              unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
-              : > game-assets/SHA256SUMS
-              for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
-                FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
-                if [ -z "$FOUND" ] || [ ! -s "$FOUND" ]; then
-                  echo "::error::Required Monster Hunter file is missing or empty: $f"
-                  find game-assets/extracted -type f -printf '%P (%s bytes)\n' | head -200
-                  exit 1
-                fi
-                cp "$FOUND" "game-assets/$f"
-                sha256sum "game-assets/$f" >> game-assets/SHA256SUMS
-                adb push "game-assets/$f" "/sdcard/Download/$f"
-              done
-              adb shell ls -l /sdcard/Download/mhi_9.jar /sdcard/Download/mhi_9.jam /sdcard/Download/mhi_9.sp
-            else
-              echo "::error::Could not retrieve the Archive.org game ZIP."
-              exit 1
-            fi
-
-            adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
-            adb pull /sdcard/window.xml diagnostics/emulator-window.xml || true
-            adb shell screencap -p /sdcard/screen.png
-            adb pull /sdcard/screen.png diagnostics/emulator-screen.png
-            adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
-            echo "API 19 install-and-launch smoke test passed."
-
+            sleep 5
+          done
+          if [ "$booted" -ne 1 ]; then
+            echo "::error::Android 4.4 emulator did not finish booting within 15 minutes."
+            adb devices -l > diagnostics/adb-devices.txt 2>&1 || true
+            adb -e logcat -d -v threadtime > diagnostics/logcat-boot-failure.txt 2>&1 || true
+            tail -300 diagnostics/emulator-boot.log || true
+            exit 1
+          fi
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
+          echo "Android 4.4 API 19 boot completed."
+          set -euo pipefail
+          mkdir -p diagnostics game-assets
+          APK="$(find apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          echo "APK=$APK" | tee diagnostics/apk-info.txt
+          adb wait-for-device
+          adb install -r "$APK"
+          
+          BADGING="$(aapt dump badging "$APK")"
+          PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
+          ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
+          if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
+            echo "::error::Could not determine APK package/launch activity."
+            printf '%s\n' "$BADGING" | tee diagnostics/apk-badging.txt
+            exit 1
+          fi
+          printf 'Package: %s\nLaunch activity: %s\n' "$PACKAGE" "$ACTIVITY" | tee diagnostics/apk-info.txt
+          
+          adb shell am force-stop "$PACKAGE" || true
+          adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+          sleep 12
+          adb shell dumpsys activity activities > diagnostics/activity-after-launch.txt
+          adb shell dumpsys window windows > diagnostics/windows-after-launch.txt
+          if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
+            echo "::error::PocketDoJa process died after launch on API 19."
+            adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt
+            exit 1
+          fi
+          
+          # Stage the reported Monster Hunter files. This does not claim JAM import was tested.
+          if curl -fL --retry 2 --connect-timeout 20 \
+            'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
+            -o game-assets/Fan-Translations-i-Appli.zip; then
+            mkdir -p game-assets/extracted
+            unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
+            : > game-assets/SHA256SUMS
+            for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
+              FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
+              if [ -z "$FOUND" ] || [ ! -s "$FOUND" ]; then
+                echo "::error::Required Monster Hunter file is missing or empty: $f"
+                find game-assets/extracted -type f -printf '%P (%s bytes)\n' | head -200
+                exit 1
+              fi
+              cp "$FOUND" "game-assets/$f"
+              sha256sum "game-assets/$f" >> game-assets/SHA256SUMS
+              adb push "game-assets/$f" "/sdcard/Download/$f"
+            done
+            adb shell ls -l /sdcard/Download/mhi_9.jar /sdcard/Download/mhi_9.jam /sdcard/Download/mhi_9.sp
+          else
+            echo "::error::Could not retrieve the Archive.org game ZIP."
+            exit 1
+          fi
+          
+          adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+          adb pull /sdcard/window.xml diagnostics/emulator-window.xml || true
+          adb shell screencap -p /sdcard/screen.png
+          adb pull /sdcard/screen.png diagnostics/emulator-screen.png
+          adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
+          echo "API 19 install-and-launch smoke test passed."
+          
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
