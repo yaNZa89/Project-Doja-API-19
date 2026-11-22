@@ -267,7 +267,7 @@ jobs:
               new_crash_handler
           )
 
-print("Applied temporary crash diagnostics and enabled in-app report export.")
+          print("Applied temporary crash diagnostics and enabled in-app report export.")
           PY
 
           chmod +x "$SOURCE_ROOT/tools/build-api19-manual.sh"
