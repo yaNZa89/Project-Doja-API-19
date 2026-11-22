@@ -1,0 +1,25 @@
+name: PocketDoJa API 19 workflow preflight
+
+on:
+  push:
+    paths:
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Confirm runner and repository checkout
+        uses: actions/checkout@v4
+      - name: Report environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Preflight workflow parsed and runner started."
+          echo "Commit: $GITHUB_SHA"
+          test -f .github/workflows/build-pocketdoja.yml
+          ls -lh ./*.zip
