@@ -216,6 +216,12 @@ jobs:
           path: |
             source/**/build-manual/java-sources.txt
             source/**/build-manual/main-dex-rules.pro
+            source/**/app/src/main/java/opendoja/android/JamAssets.java
+            source/**/app/src/main/java/opendoja/android/EntryActivity.java
+            source/**/app/src/main/java/opendoja/android/HomeActivity.java
+            source/**/app/src/main/java/opendoja/android/JamDexHost.java
+            source/**/app/src/main/java/opendoja/android/CustomFilePicker.java
+            source/**/app/src/main/java/opendoja/android/DisplayActivity.java
           if-no-files-found: warn
           retention-days: 14
           
