@@ -30,10 +30,12 @@ jobs:
           api-level: 19
           target: default
           arch: x86
-          profile: Nexus 5
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu off -no-snapshot -wipe-data
-          emulator-boot-timeout: 1200
-          disable-linux-hw-accel: true
+          profile: Nexus One
+          # Keep the AVD small and allow KVM acceleration on Linux runners.
+          # A newly-created AVD is already clean; avoid an extra -wipe-data pass.
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2
+          emulator-boot-timeout: 900
+          disable-linux-hw-accel: false
           disable-animations: true
           script: |
             set -euo pipefail
