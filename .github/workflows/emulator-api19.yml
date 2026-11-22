@@ -42,8 +42,8 @@ jobs:
             adb install -r "$APK"
 
             BADGING="$(aapt dump badging "$APK")"
-            PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -1)"
-            ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -1)"
+            PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
+            ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
             if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
               echo "::error::Could not determine APK package/launch activity."
               printf '%s\n' "$BADGING"
@@ -66,8 +66,8 @@ jobs:
             # Try to obtain the exact Monster Hunter i-appli files used in the
             # user's report. Staging is separate from importing them in the UI.
             mkdir -p game-assets
-            if curl -fL --retry 2 --connect-timeout 20 \\
-              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \\
+            if curl -fL --retry 2 --connect-timeout 20 \
+              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
               -o game-assets/Fan-Translations-i-Appli.zip; then
               mkdir -p game-assets/extracted
               unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
@@ -77,7 +77,7 @@ jobs:
                 FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
                 if [ -z "$FOUND" ] || [ ! -s "$FOUND" ]; then
                   echo "::error::Required Monster Hunter file is missing or empty: $f"
-                  find game-assets/extracted -type f -printf '%P (%s bytes)\\n' | head -200
+                  find game-assets/extracted -type f -printf '%P (%s bytes)\n' | head -200
                   exit 1
                 fi
                 cp "$FOUND" "game-assets/$f"
