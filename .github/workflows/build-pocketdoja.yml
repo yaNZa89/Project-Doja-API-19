@@ -44,6 +44,20 @@ jobs:
           echo "SOURCE_ROOT=$SOURCE_ROOT" >> "$GITHUB_ENV"
           test -f "$SOURCE_ROOT/app/src/main/AndroidManifest.xml"
 
+      - name: Inspect API 19 game scanner NIO calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$SOURCE_ROOT/app/src/main/java/opendoja/android/HomeActivity.java"
+          echo "=== scanGames declaration and body ==="
+          LINE="$(grep -n 'scanGames(' "$TARGET" | head -1 | cut -d: -f1)"
+          if [ -z "$LINE" ]; then echo "::error::scanGames method not found"; exit 1; fi
+          START=$((LINE-8)); [ "$START" -gt 0 ] || START=1
+          END=$((LINE+180))
+          sed -n "${START},${END}p" "$TARGET"
+          echo "=== NIO calls in HomeActivity ==="
+          grep -nE 'Paths\\.|Files\\.|FileSystems\\.|java\\.nio\\.file' "$TARGET" || true
+
       - name: Fix rewritten JAR to DEX cache mapping
         shell: bash
         run: |
