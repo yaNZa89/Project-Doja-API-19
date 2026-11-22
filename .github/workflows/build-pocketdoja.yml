@@ -238,11 +238,11 @@ jobs:
             if [[ "$has_desugared_lib" -eq 0 ]]; then
               args+=(--desugared-lib "$config")
             fi
-            if [[ ! " ${args[*]} " == *" $nio_lib "* ]]; then
-              args+=("$nio_lib")
-            fi
-            echo "::notice::L8 configured with NIO implementation input: $nio_lib"
-            echo "::notice::L8 args include NIO library: $(printf '%q ' "${args[@]}")"
+            # build-api19-manual.sh already extracts this JAR into
+            # build-manual/desugar-classes and passes that directory to L8.
+            # Adding the source JAR again duplicates every class in L8.
+            echo "::notice::L8 uses extracted NIO classes; source JAR is not added twice."
+            echo "::notice::L8 args: $(printf '%q ' "${args[@]}")"
           fi
 
           if [[ "$is_d8" -eq 1 ]]; then
