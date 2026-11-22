@@ -357,7 +357,7 @@ jobs:
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
               "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();",
-              "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();\\n        final android.content.Context crashContext = activity.getApplicationContext();"
+              "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();\n        final android.content.Context crashContext = activity.getApplicationContext();"
           )
 
           print("Applied temporary crash diagnostics and enabled in-app report export.")
