@@ -66,13 +66,12 @@ jobs:
             # Try to obtain the exact Monster Hunter i-appli files used in the
             # user's report. Staging is separate from importing them in the UI.
             mkdir -p game-assets
-            if curl -fL --retry 2 --connect-timeout 20 \
-              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
+            if curl -fL --retry 2 --connect-timeout 20 \\
+              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \\
               -o game-assets/Fan-Translations-i-Appli.zip; then
               mkdir -p game-assets/extracted
               unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
-              # Require the complete three-file DoJa package; partial staging
-              # must never be reported as a successful preparation check.
+              # Require all three game files; partial staging is a failure.
               : > game-assets/SHA256SUMS
               for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
                 FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
@@ -87,11 +86,8 @@ jobs:
               done
               adb shell ls -l /sdcard/Download/mhi_9.jar /sdcard/Download/mhi_9.jam /sdcard/Download/mhi_9.sp
             else
-              echo "::error::Could not retrieve the Archive.org game ZIP; refusing to mark DoJa preparation successful."
+              echo "::error::Could not retrieve the Archive.org game ZIP; DoJa test preparation cannot continue."
               exit 1
-              done
-            else
-              echo "::warning::Could not retrieve the Archive.org game ZIP; emulator launch smoke test will still be recorded."
             fi
 
             # Capture the emulator's visible UI and logs for the next targeted
