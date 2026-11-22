@@ -224,14 +224,25 @@ jobs:
             esac
           done
 
-          if [[ "$is_l8" -eq 1 && "$has_desugared_lib" -eq 0 ]]; then
+          if [[ "$is_l8" -eq 1 ]]; then
             config="$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
+            nio_lib="$SOURCE_ROOT/.build-deps/desugar_jdk_libs_nio-2.1.4.jar"
             if [[ ! -s "$config" ]]; then
               echo "::error::L8 desugared library configuration is missing: $config"
               exit 1
             fi
-            args+=(--desugared-lib "$config")
-            echo "::notice::L8 desugared library configuration supplied: $config"
+            if [[ ! -s "$nio_lib" ]]; then
+              echo "::error::L8 NIO implementation JAR is missing: $nio_lib"
+              exit 1
+            fi
+            if [[ "$has_desugared_lib" -eq 0 ]]; then
+              args+=(--desugared-lib "$config")
+            fi
+            if [[ ! " ${args[*]} " == *" $nio_lib "* ]]; then
+              args+=("$nio_lib")
+            fi
+            echo "::notice::L8 configured with NIO implementation input: $nio_lib"
+            echo "::notice::L8 args include NIO library: $(printf '%q ' "${args[@]}")"
           fi
 
           if [[ "$is_d8" -eq 1 ]]; then
