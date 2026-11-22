@@ -1,0 +1,107 @@
+name: PocketDoJa API 19 emulator smoke test
+
+on:
+  workflow_run:
+    workflows: ["Build PocketDoJa API 19 from uploaded ZIP"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  android-19-emulator:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Download APK from build run
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketdoja-android44-legacy-manual-debug
+          path: apk
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Set up Android 4.4 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 19
+          target: default
+          arch: x86
+          profile: Nexus 5
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK="$(find apk -type f -name '*.apk' -print -quit)"
+            test -n "$APK"
+            echo "APK=$APK"
+            adb wait-for-device
+            adb install -r "$APK"
+
+            BADGING="$(aapt dump badging "$APK")"
+            PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -1)"
+            ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -1)"
+            if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
+              echo "::error::Could not determine APK package/launch activity."
+              printf '%s\n' "$BADGING"
+              exit 1
+            fi
+            echo "Package: $PACKAGE"
+            echo "Launch activity: $ACTIVITY"
+
+            adb shell am force-stop "$PACKAGE" || true
+            adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+            sleep 12
+            adb shell dumpsys activity activities > activity-after-launch.txt
+            adb shell dumpsys window windows > windows-after-launch.txt
+            if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
+              echo "::error::PocketDoJa process died after launch on API 19."
+              adb logcat -d -v threadtime > logcat-launch-failure.txt
+              exit 1
+            fi
+
+            # Try to obtain the exact Monster Hunter i-appli files used in the
+            # user's report. Staging is separate from importing them in the UI.
+            mkdir -p game-assets
+            if curl -fL --retry 2 --connect-timeout 20 \
+              'https://archive.org/download/keitai-archive-i-appli/Fan%20Translations%20i-Appli.zip' \
+              -o game-assets/Fan-Translations-i-Appli.zip; then
+              mkdir -p game-assets/extracted
+              unzip -oq game-assets/Fan-Translations-i-Appli.zip -d game-assets/extracted
+              find game-assets/extracted -type f \( -iname 'mhi_9.jar' -o -iname 'mhi_9.jam' -o -iname 'mhi_9.sp' \) -print
+              for f in mhi_9.jar mhi_9.jam mhi_9.sp; do
+                FOUND="$(find game-assets/extracted -type f -iname "$f" -print -quit)"
+                if [ -n "$FOUND" ]; then
+                  adb push "$FOUND" "/sdcard/Download/$f"
+                fi
+              done
+            else
+              echo "::warning::Could not retrieve the Archive.org game ZIP; emulator launch smoke test will still be recorded."
+            fi
+
+            # Capture the emulator's visible UI and logs for the next targeted
+            # import-automation step. No claim is made that JAM import was tested.
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window.xml emulator-window.xml || true
+            adb shell screencap -p /sdcard/screen.png
+            adb pull /sdcard/screen.png emulator-screen.png
+            adb logcat -d -v threadtime > logcat-api19.txt
+            echo "API 19 install-and-launch smoke test passed."
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketdoja-api19-emulator-evidence
+          path: |
+            emulator-window.xml
+            emulator-screen.png
+            logcat-api19.txt
+            logcat-launch-failure.txt
+            activity-after-launch.txt
+            windows-after-launch.txt
+            game-assets/
+          if-no-files-found: warn
+          retention-days: 14
