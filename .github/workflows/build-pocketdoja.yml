@@ -68,6 +68,41 @@ jobs:
           PY
           grep -n "File siblingDex = JamDexHost.dexFor(dexJar);" "$TARGET"
 
+      - name: Fix rewritten JAR suffix matching order
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$SOURCE_ROOT/app/src/main/java/opendoja/android/EntryActivity.java"
+          python3 - "$TARGET" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          general = '''                if (jarName.endsWith(".rewritten.jar")) {
+                    String baseName = jarName.substring(0, jarName.length() - ".rewritten.jar".length());
+                    dexJar = new File(jamJar.getParentFile(), baseName + ".jar");
+                } else if (jarName.endsWith(".dex.rewritten.jar")) {
+                    String baseName = jarName.substring(0, jarName.length() - ".dex.rewritten.jar".length());
+                    dexJar = new File(jamJar.getParentFile(), baseName + ".jar");
+                }'''
+          specific_first = '''                if (jarName.endsWith(".dex.rewritten.jar")) {
+                    String baseName = jarName.substring(0, jarName.length() - ".dex.rewritten.jar".length());
+                    dexJar = new File(jamJar.getParentFile(), baseName + ".jar");
+                } else if (jarName.endsWith(".rewritten.jar")) {
+                    String baseName = jarName.substring(0, jarName.length() - ".rewritten.jar".length());
+                    dexJar = new File(jamJar.getParentFile(), baseName + ".jar");
+                }'''
+          if general in source:
+              source = source.replace(general, specific_first, 1)
+          elif specific_first in source:
+              print("Specific .dex.rewritten.jar check is already first.")
+          else:
+              raise SystemExit("Expected rewritten-JAR suffix block not found; refusing an uncertain patch.")
+          path.write_text(source, encoding="utf-8")
+          print("Corrected suffix matching: .dex.rewritten.jar is checked before .rewritten.jar.")
+          PY
+          grep -A5 -B1 'jarName.endsWith(".dex.rewritten.jar")' "$TARGET"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
