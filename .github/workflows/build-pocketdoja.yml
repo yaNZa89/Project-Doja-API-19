@@ -189,6 +189,59 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Temporary runtime diagnostics for the Monster Hunter JAM crash.
+          python3 - "$SOURCE_ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+
+          def replace_once(relative, old, new):
+              path = root / relative
+              data = path.read_text(encoding="utf-8")
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected one occurrence in {relative}, found {count}: {old!r}")
+              path.write_text(data.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              'private static final String DIAG_BUILD = "2026-11-11 15:55 led-blink";',
+              'private static final String DIAG_BUILD = "2026-11-22 api19 jam-crash-diagnostics";'
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "private static final boolean SAVE_DIAGNOSTICS_ENABLED = false;",
+              "private static final boolean SAVE_DIAGNOSTICS_ENABLED = true;"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/DisplayActivity.java",
+              "static final int DEFAULTS_VERSION = 1;",
+              "static final int DEFAULTS_VERSION = 2;"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/DisplayActivity.java",
+              '.putString(KEY_DEBUG, "disable")',
+              '.putString(KEY_DEBUG, "enable")'
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              """            if (previousCrashHandler != null) {
+                          previousCrashHandler.uncaughtException(thread, throwable);
+                      }""",
+              """            try {
+                          opendoja.host.OpenDoJaLog.error(EntryActivity.class,
+                                  "uncaught exception on thread " + thread.getName(), throwable);
+                          android.util.Log.e("OpenDoJa", "uncaught exception on thread " + thread.getName(), throwable);
+                      } catch (Throwable ignored) {
+                      }
+                      if (previousCrashHandler != null) {
+                          previousCrashHandler.uncaughtException(thread, throwable);
+                      }"""
+          )
+          print("Applied temporary crash diagnostics and enabled in-app report export.")
+          PY
+
           chmod +x "$SOURCE_ROOT/tools/build-api19-manual.sh"
           "$SOURCE_ROOT/tools/build-api19-manual.sh"
           APK="$SOURCE_ROOT/build-manual/PocketDoJa-legacy-v1.3.0a-api19-debug.apk"
