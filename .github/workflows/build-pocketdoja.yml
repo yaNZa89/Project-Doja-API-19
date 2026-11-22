@@ -140,21 +140,17 @@ jobs:
           done
 
           if [[ "$is_d8" -eq 1 ]]; then
+            echo "::notice::D8 launch intercepted; checking program inputs"
             for i in "${!args[@]}"; do
               input="${args[$i]}"
-              case "$input" in
-                */build-manual/classes|build-manual/classes)
-                  if [[ -d "$input" ]]; then
-                    jar_path="${input%/classes}/app-classes.jar"
-                    [[ "$jar_path" != "$input" ]] || jar_path="build-manual/app-classes.jar"
-                    rm -f "$jar_path"
-                    "$POCKETDOJA_REAL_JAVA_HOME/bin/jar" cf "$jar_path" -C "$input" .
-                    test -s "$jar_path"
-                    args[$i]="$jar_path"
-                    echo "::notice::D8 input directory packaged as JAR: $jar_path"
-                  fi
-                  ;;
-              esac
+              if [[ -d "$input" ]] && find "$input" -type f -name '*.class' -print -quit | grep -q .; then
+                jar_path="$RUNNER_TEMP/pocketdoja-d8-input-$i.jar"
+                rm -f "$jar_path"
+                "$POCKETDOJA_REAL_JAVA_HOME/bin/jar" cf "$jar_path" -C "$input" .
+                test -s "$jar_path"
+                args[$i]="$jar_path"
+                echo "::notice::D8 directory input converted to JAR: $input -> $jar_path"
+              fi
             done
           fi
           exec "$REAL_JAVA" "${args[@]}"
@@ -164,6 +160,16 @@ jobs:
           echo "POCKETDOJA_REAL_JAVA_HOME=$REAL_JAVA_HOME" >> "$GITHUB_ENV"
           echo "JAVA_HOME=$WRAPPER_HOME" >> "$GITHUB_ENV"
           echo "$WRAPPER_HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Java wrapper is active
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "java path=$(command -v java)"
+          test -x "$JAVA_HOME/bin/java"
+          "$JAVA_HOME/bin/java" -version
+          "$JAVA_HOME/bin/java" -version >/dev/null 2>&1
 
       - name: Build Android 4.4 API 19 debug APK
         shell: bash
