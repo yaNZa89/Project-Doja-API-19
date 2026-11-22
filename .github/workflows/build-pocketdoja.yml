@@ -133,11 +133,25 @@ jobs:
           REAL_JAVA="$POCKETDOJA_REAL_JAVA_HOME/bin/java"
           args=("$@")
           is_d8=0
+          is_l8=0
+          has_desugared_lib=0
           for arg in "${args[@]}"; do
             case "$arg" in
               com.android.tools.r8.D8|com.android.tools.r8.D8*) is_d8=1 ;;
+              com.android.tools.r8.L8|com.android.tools.r8.L8*) is_l8=1 ;;
+              --desugared-lib) has_desugared_lib=1 ;;
             esac
           done
+
+          if [[ "$is_l8" -eq 1 && "$has_desugared_lib" -eq 0 ]]; then
+            config="$SOURCE_ROOT/.build-deps/desugar_jdk_libs_configuration_nio-2.1.4.json"
+            if [[ ! -s "$config" ]]; then
+              echo "::error::L8 desugared library configuration is missing: $config"
+              exit 1
+            fi
+            args+=(--desugared-lib "$config")
+            echo "::notice::L8 desugared library configuration supplied: $config"
+          fi
 
           if [[ "$is_d8" -eq 1 ]]; then
             echo "::notice::D8 launch intercepted; checking program inputs"
