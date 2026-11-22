@@ -222,6 +222,11 @@ jobs:
             source/**/app/src/main/java/opendoja/android/JamDexHost.java
             source/**/app/src/main/java/opendoja/android/CustomFilePicker.java
             source/**/app/src/main/java/opendoja/android/DisplayActivity.java
+            source/**/opendoja/src/main/java/opendoja/host/JamLauncher.java
+            source/**/opendoja/src/main/java/opendoja/host/JamMetadataResolver.java
+            source/**/opendoja/src/main/java/opendoja/host/JamGameJarLocator.java
+            source/**/opendoja/src/main/java/opendoja/host/JamGameClassLoaderFactory.java
+            source/**/opendoja/src/main/java/opendoja/host/DoJaRuntime.java
           if-no-files-found: warn
           retention-days: 14
           
