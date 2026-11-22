@@ -249,18 +249,12 @@ jobs:
               '.putString(KEY_DEBUG, "disable")',
               '.putString(KEY_DEBUG, "enable")'
           )
-          old_crash_handler = """            if (previousCrashHandler != null) {
-                previousCrashHandler.uncaughtException(thread, throwable);
-            }"""
-          new_crash_handler = """            try {
-                opendoja.host.OpenDoJaLog.error(EntryActivity.class,
-                        "uncaught exception on thread " + thread.getName(), throwable);
-                android.util.Log.e("OpenDoJa", "uncaught exception on thread " + thread.getName(), throwable);
-            } catch (Throwable ignored) {
-            }
-            if (previousCrashHandler != null) {
-                previousCrashHandler.uncaughtException(thread, throwable);
-            }"""
+          old_crash_handler = "previousCrashHandler.uncaughtException(thread, throwable);"
+          new_crash_handler = """try {
+                      android.util.Log.e("OpenDoJa", "uncaught exception on thread " + thread.getName(), throwable);
+                  } catch (Throwable ignored) {
+                  }
+                  previousCrashHandler.uncaughtException(thread, throwable);"""
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
               old_crash_handler,
