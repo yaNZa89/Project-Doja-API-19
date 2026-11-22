@@ -226,18 +226,8 @@ jobs:
           )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
-              """            if (previousCrashHandler != null) {
-                          previousCrashHandler.uncaughtException(thread, throwable);
-                      }""",
-              """            try {
-                          opendoja.host.OpenDoJaLog.error(EntryActivity.class,
-                                  "uncaught exception on thread " + thread.getName(), throwable);
-                          android.util.Log.e("OpenDoJa", "uncaught exception on thread " + thread.getName(), throwable);
-                      } catch (Throwable ignored) {
-                      }
-                      if (previousCrashHandler != null) {
-                          previousCrashHandler.uncaughtException(thread, throwable);
-                      }"""
+              "            if (previousCrashHandler != null) {\\n                previousCrashHandler.uncaughtException(thread, throwable);\\n            }",
+              "            try {\\n                opendoja.host.OpenDoJaLog.error(EntryActivity.class, \\n                        \"uncaught exception on thread \" + thread.getName(), throwable);\\n                android.util.Log.e(\"OpenDoJa\", \"uncaught exception on thread \" + thread.getName(), throwable);\\n            } catch (Throwable ignored) {\\n            }\\n            if (previousCrashHandler != null) {\\n                previousCrashHandler.uncaughtException(thread, throwable);\\n            }"
           )
           print("Applied temporary crash diagnostics and enabled in-app report export.")
           PY
