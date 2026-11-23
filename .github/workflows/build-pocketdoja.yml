@@ -408,6 +408,16 @@ jobs:
                                       }"""
           )
 
+          # Keep the DEX cache lookup aligned with ensureDex(jar): the DEX is
+          # written beside the exact JAR resolved by JamGameJarLocator. Mapping
+          # a rewritten JAR back to its original filename points at a cache
+          # file that was never generated and falls back to a JVM URLClassLoader.
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "File siblingDex = JamDexHost.dexFor(dexJar);",
+              "File siblingDex = JamDexHost.dexFor(jamJar);"
+          )
+
           # Persist uncaught crashes before Android terminates the process. The
           # report is written synchronously so it survives an immediate FC and
           # can be retrieved without reopening PocketDoJa.
