@@ -479,8 +479,8 @@ jobs:
           )
 
           # Add an always-on, per-session diagnostic log. Android 4.4 restricts
-          # third-party access to the global log buffer, so this records all
-          # PocketDoJa lifecycle/import/launch events and stack traces directly.
+          # third-party access to the global log buffer, so this records PocketDoJa
+          # lifecycle/import/launch events and stack traces directly.
           session_logger = """    private static final Object POCKET_DOJA_LOG_LOCK = new Object();
               private static java.io.File pocketDoJaSessionLog;
 
@@ -529,48 +529,57 @@ jobs:
           """
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
-              "public class HomeActivity extends Activity {",
-              "public class HomeActivity extends Activity {\\n" + session_logger
+              """public class HomeActivity extends Activity {""",
+              """public class HomeActivity extends Activity {
+          """ + session_logger
           )
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
-              "        installPocketDoJaCrashReportHandler(this);",
-              "        installPocketDoJaCrashReportHandler(this);\\n        logSession(this, \\"APP_START build=\\" + DIAG_BUILD, null);"
+              """        installPocketDoJaCrashReportHandler(this);""",
+              """        installPocketDoJaCrashReportHandler(this);
+                  logSession(this, "APP_START build=" + DIAG_BUILD, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
-              "    private void launchJam(File jam) {",
-              "    private void launchJam(File jam) {\\n        logSession(this, \\"GAME_SELECTED jam=\\" + (jam == null ? \\"null\\" : jam.getAbsolutePath()), null);"
+              """    private void launchJam(File jam) {""",
+              """    private void launchJam(File jam) {
+                  logSession(this, "GAME_SELECTED jam=" + (jam == null ? "null" : jam.getAbsolutePath()), null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
-              "    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {",
-              "    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {\\n        logSession(this, \\"IMPORT_START folders=\\" + (folders == null ? 0 : folders.size()) + \\" uri=\\" + treeUri, null);"
+              """    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {""",
+              """    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {
+                  logSession(this, "IMPORT_START folders=" + (folders == null ? 0 : folders.size()) + " uri=" + treeUri, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/HomeActivity.java",
-              "    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {",
-              "    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {\\n        logSession(this, \\"IMPORT_FOLDER_BEGIN documentId=\\" + targetDocumentId + \\" uri=\\" + treeUri, null);"
+              """    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {""",
+              """    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {
+                  logSession(this, "IMPORT_FOLDER_BEGIN documentId=" + targetDocumentId + " uri=" + treeUri, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
-              "        EntryActivity.gameId = gameId;",
-              "        EntryActivity.gameId = gameId;\\n        HomeActivity.logSession(this, \\"GAME_ACTIVITY_START jam=\\" + gameId, null);"
+              """        EntryActivity.gameId = gameId;""",
+              """        EntryActivity.gameId = gameId;
+                  HomeActivity.logSession(this, "GAME_ACTIVITY_START jam=" + gameId, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
-              "        configureDebugLogging();",
-              "        configureDebugLogging();\\n        HomeActivity.logSession(this, \\"GAME_LAUNCH_BEGIN jam=\\" + gameId, null);"
+              """        configureDebugLogging();""",
+              """        configureDebugLogging();
+                  HomeActivity.logSession(this, "GAME_LAUNCH_BEGIN jam=" + gameId, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
-              "            opendoja.host.OpenDoJaLog.info(EntryActivity.class, \\"jam launch returned normally: \\" + application);",
-              "            opendoja.host.OpenDoJaLog.info(EntryActivity.class, \\"jam launch returned normally: \\" + application);\\n            HomeActivity.logSession(this, \\"GAME_LAUNCH_RETURNED application=\\" + application, null);"
+              """            opendoja.host.OpenDoJaLog.info(EntryActivity.class, "jam launch returned normally: " + application);""",
+              """            opendoja.host.OpenDoJaLog.info(EntryActivity.class, "jam launch returned normally: " + application);
+                      HomeActivity.logSession(this, "GAME_LAUNCH_RETURNED application=" + application, null);"""
           )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
-              "            android.util.Log.e(\\"OpenDoJa\\", \\"game launch failed\\", throwable);",
-              "            android.util.Log.e(\\"OpenDoJa\\", \\"game launch failed\\", throwable);\\n            HomeActivity.logSession(this, \\"GAME_LAUNCH_FAILED\\", throwable);"
+              """            android.util.Log.e("OpenDoJa", "game launch failed", throwable);""",
+              """            android.util.Log.e("OpenDoJa", "game launch failed", throwable);
+                      HomeActivity.logSession(this, "GAME_LAUNCH_FAILED", throwable);"""
           )
           print("Applied always-on PocketDoJa session logging and crash diagnostics.")
           PY
