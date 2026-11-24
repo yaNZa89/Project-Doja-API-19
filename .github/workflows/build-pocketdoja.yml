@@ -762,6 +762,13 @@ jobs:
                           if (pocketDoJaSessionLog == null) {
                               String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
                                       .format(new java.util.Date());
+                              // Ensure Android creates the app-specific external directory
+                              // even when the public Downloads location is writable.
+                              java.io.File appExternal = context.getExternalFilesDir(null);
+                              if (appExternal != null && !appExternal.exists()) appExternal.mkdirs();
+                              java.io.File appDiagnostics = context.getExternalFilesDir("diagnostics");
+                              if (appDiagnostics != null && !appDiagnostics.exists()) appDiagnostics.mkdirs();
+
                               java.io.File downloads = android.os.Environment.getExternalStoragePublicDirectory(
                                       android.os.Environment.DIRECTORY_DOWNLOADS);
                               java.io.File folder = new java.io.File(downloads, "PocketDoJa");
