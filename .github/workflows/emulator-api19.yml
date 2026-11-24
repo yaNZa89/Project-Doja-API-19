@@ -97,6 +97,43 @@ jobs:
           timeout 15s adb shell settings put global transition_animation_scale 0 || true
           timeout 15s adb shell settings put global animator_duration_scale 0 || true
           echo "Android 4.4 API 19 boot completed."
+      - name: Install and launch PocketDoJa on Android 4.4
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -Eeuo pipefail
+          mkdir -p diagnostics
+          export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0:$PATH"
+          APK="$(find apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          echo "APK=$APK" | tee diagnostics/apk-info.txt
+          timeout 30s adb wait-for-device
+          timeout 120s adb install -r "$APK"
+          BADGING="$(aapt dump badging "$APK")"
+          PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1)"
+          ACTIVITY="$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -1)"
+          if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
+            echo "::error::Could not determine APK package/launch activity."
+            printf '%s\n' "$BADGING" | tee diagnostics/apk-badging.txt
+            exit 1
+          fi
+          printf 'Package: %s\nLaunch activity: %s\n' "$PACKAGE" "$ACTIVITY" | tee -a diagnostics/apk-info.txt
+          timeout 30s adb shell am force-stop "$PACKAGE" || true
+          timeout 45s adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+          sleep 15
+          timeout 20s adb shell dumpsys activity activities > diagnostics/activity-after-launch.txt
+          timeout 20s adb shell dumpsys window windows > diagnostics/windows-after-launch.txt
+          if ! timeout 15s adb shell pidof "$PACKAGE" | grep -q '[0-9]'; then
+            echo "::error::PocketDoJa process died after launch on API 19."
+            timeout 30s adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt || true
+            exit 1
+          fi
+          timeout 30s adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+          timeout 20s adb pull /sdcard/window.xml diagnostics/emulator-window.xml || true
+          timeout 20s adb shell screencap -p /sdcard/screen.png
+          timeout 20s adb pull /sdcard/screen.png diagnostics/emulator-screen.png
+          timeout 45s adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
+          echo "API 19 APK install-and-launch smoke test passed."
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
