@@ -97,6 +97,35 @@ jobs:
           timeout 15s adb shell settings put global transition_animation_scale 0 || true
           timeout 15s adb shell settings put global animator_duration_scale 0 || true
           echo "Android 4.4 API 19 boot completed."
+      - name: Prepare and stage Monster Hunter DoJa test package
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -Eeuo pipefail
+          mkdir -p game-assets diagnostics
+          cp test-assets/mhi_9.jam game-assets/mhi_9.jam
+          JAR_URL="http://mhi.gs.keitaiarchive.org/sh/i/mh/up/appli_904i/mhi_9.jar"
+          curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$JAR_URL" -o game-assets/mhi_9.jar
+          echo "29239c996d454c53bc32af959537eb76c72f25ece24b8207b8034daa35d8948e  game-assets/mhi_9.jar" | sha256sum --check -
+          python3 - <<'PY'
+          import hashlib, zipfile
+          jar='game-assets/mhi_9.jar'
+          out='game-assets/mhi_9.sp'
+          with zipfile.ZipFile(jar) as z:
+              data=z.read('syokibugu')
+          open(out,'wb').write(data)
+          expected='97cac37b3b4f468c1520d1c7e01a5b2f9b1324892fe4bcb6c9720878ffa3906d'
+          actual=hashlib.sha256(data).hexdigest()
+          if len(data)!=56320 or actual!=expected:
+              raise SystemExit(f'Scratchpad reconstruction mismatch: {len(data)} bytes SHA256={actual}')
+          print(f'Scratchpad reconstructed from JAR nested resource: {len(data)} bytes SHA256={actual}')
+          PY
+          sha256sum game-assets/* | tee diagnostics/game-assets-sha256.txt
+          adb shell mkdir -p /data/local/tmp/pocketdoja-game
+          adb push game-assets/mhi_9.jam /data/local/tmp/pocketdoja-game/mhi_9.jam
+          adb push game-assets/mhi_9.jar /data/local/tmp/pocketdoja-game/mhi_9.jar
+          adb push game-assets/mhi_9.sp /data/local/tmp/pocketdoja-game/mhi_9.sp
+          adb shell ls -l /data/local/tmp/pocketdoja-game | tee diagnostics/game-assets-on-emulator.txt
       - name: Install and launch PocketDoJa on Android 4.4
         shell: bash
         timeout-minutes: 8
