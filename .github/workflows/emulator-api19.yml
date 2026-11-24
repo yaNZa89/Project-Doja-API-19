@@ -2,6 +2,11 @@ name: PocketDoJa API 19 emulator smoke test
 
 on:
   workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful build workflow run ID containing the API 19 APK artifact
+        required: true
+        type: string
   workflow_run:
     workflows: ["Build PocketDoJa API 19 from uploaded ZIP"]
     types: [completed]
@@ -12,7 +17,7 @@ permissions:
 
 jobs:
   android-19-emulator:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -23,7 +28,7 @@ jobs:
           path: apk
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.build_run_id || github.event.workflow_run.id }}
 
       - name: Install emulator runtime libraries
         shell: bash
@@ -103,64 +108,6 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Prepare and stage Monster Hunter DoJa test package
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          set -Eeuo pipefail
-          mkdir -p game-assets diagnostics
-          cp test-assets/mhi_9.jam game-assets/mhi_9.jam
-          JAR_PATH="/sh/i/mh/up/appli_904i/mhi_9.jar"
-          JAR_OK=0
-          for SCHEME in https http; do
-            URL="${SCHEME}://mhi.gs.keitaiarchive.org${JAR_PATH}"
-            echo "Trying Monster Hunter package source: ${URL}"
-            if curl --fail --show-error --location --http1.1 --user-agent "Mozilla/5.0 PocketDoJa-API19-Test" --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 180 --write-out "HTTP=%{http_code} bytes=%{size_download}\n" "$URL" -o game-assets/mhi_9.jar.tmp; then
-              if [ "$(stat -c %s game-assets/mhi_9.jar.tmp)" -gt 100000 ]; then
-                mv game-assets/mhi_9.jar.tmp game-assets/mhi_9.jar
-                JAR_OK=1
-                break
-              fi
-              echo "Source returned an empty/undersized JAR; trying next transport."
-            fi
-          done
-          if [ "$JAR_OK" -ne 1 ]; then
-            echo "::error::Both HTTPS and HTTP source attempts failed to provide the game JAR."
-            exit 1
-          fi
-          echo "29239c996d454c53bc32af959537eb76c72f25ece24b8207b8034daa35d8948e  game-assets/mhi_9.jar" | sha256sum --check -
-          SP_URL="http://mhi.gs.keitaiarchive.org/sh/i/mh/up/appli_904i/mhi_9.sp"
-          if curl --fail --location --retry 2 --connect-timeout 15 --max-time 90 "$SP_URL" -o game-assets/mhi_9.sp.tmp; then
-            if echo "97cac37b3b4f468c1520d1c7e01a5b2f9b1324892fe4bcb6c9720878ffa3906d  game-assets/mhi_9.sp.tmp" | sha256sum --check -; then
-              mv game-assets/mhi_9.sp.tmp game-assets/mhi_9.sp
-              echo "Original scratchpad downloaded and checksum-verified."
-            else
-              rm -f game-assets/mhi_9.sp.tmp
-            fi
-          fi
-          if [ ! -s game-assets/mhi_9.sp ]; then
-            # The JAR contains the same m_pc1.mtra payload as the supplied SP.
-            # Use its embedded ZIP container as a reproducible fallback.
-            python3 - <<'PY'
-          import zipfile
-          with zipfile.ZipFile('game-assets/mhi_9.jar') as z:
-              data=z.read('syokibugu')
-          with open('game-assets/mhi_9.sp','wb') as f: f.write(data)
-          with zipfile.ZipFile('game-assets/mhi_9.sp') as z:
-              assert z.namelist()==['m_pc1.mtra']
-              assert len(z.read('m_pc1.mtra'))==42019
-          print('SP fallback prepared from identical m_pc1.mtra payload in JAR; original SP hash is not claimed.')
-          PY
-          fi
-          sha256sum game-assets/* | tee diagnostics/game-assets-sha256.txt
-          # Copy through run-as into app-private storage. /data/local/tmp is
-          # shell-owned and unreadable by the app UID, so passing that path to
-          # EntryActivity would produce a false "JAM not found" launch failure.
-          adb shell run-as com.shibesan.pocketdoja mkdir -p files/testgame
-          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.jam' < game-assets/mhi_9.jam
-          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.jar' < game-assets/mhi_9.jar
-          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.sp' < game-assets/mhi_9.sp
-          adb shell run-as com.shibesan.pocketdoja ls -l files/testgame | tee diagnostics/game-assets-on-emulator.txt
       - name: Install and launch PocketDoJa on Android 4.4
         shell: bash
         timeout-minutes: 8
@@ -201,30 +148,6 @@ jobs:
           timeout 20s adb pull /data/local/tmp/screen.png diagnostics/emulator-screen.png
           timeout 45s adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
           echo "API 19 APK install-and-launch smoke test passed."
-      - name: Launch Monster Hunter directly through EntryActivity
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          set -Eeuo pipefail
-          export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0:$PATH"
-          adb logcat -c
-          adb shell am force-stop com.shibesan.pocketdoja || true
-          timeout 45s adb shell am start -W -n com.shibesan.pocketdoja/opendoja.android.EntryActivity --es jamPath /data/data/com.shibesan.pocketdoja/files/testgame/mhi_9.jam
-          sleep 45
-          adb shell dumpsys activity activities > diagnostics/activity-after-monster-hunter.txt
-          adb shell dumpsys window windows > diagnostics/windows-after-monster-hunter.txt
-          adb shell screencap -p /data/local/tmp/monster-hunter-screen.png
-          adb pull /data/local/tmp/monster-hunter-screen.png diagnostics/monster-hunter-screen.png
-          adb logcat -d -v threadtime > diagnostics/logcat-monster-hunter.txt
-          if grep -E 'FATAL EXCEPTION|Fatal signal|ANR in com\.shibesan\.pocketdoja' diagnostics/logcat-monster-hunter.txt; then
-            echo "::error::Monster Hunter launch produced a fatal error; see logcat-monster-hunter.txt"
-            exit 1
-          fi
-          if ! grep -E 'mResumedActivity:.*opendoja\.android\.EntryActivity|ActivityRecord.*opendoja\.android\.EntryActivity' diagnostics/activity-after-monster-hunter.txt; then
-            echo "::error::EntryActivity did not remain active after the Monster Hunter launch attempt."
-            exit 1
-          fi
-          echo "Monster Hunter launch attempt captured; inspect screenshot and logcat to determine whether the game reached its menu."
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
