@@ -521,9 +521,13 @@ jobs:
           # Narrow the point of failure during EntryActivity startup.
           replace_once(
               entry,
-              """        OpenDoJaLog.configure(OpenDoJaLog.Level.OFF);""",
               """        OpenDoJaLog.configure(OpenDoJaLog.Level.OFF);
-                  HomeActivity.logSession(this, "GAME_ACTIVITY_INIT_LOGGING_READY", null);""",
+                  try {
+                      opendoja.host.device.DoJaVibrationSupport.initialize(getApplicationContext());""",
+              """        OpenDoJaLog.configure(OpenDoJaLog.Level.OFF);
+                  HomeActivity.logSession(this, "GAME_ACTIVITY_INIT_LOGGING_READY", null);
+                  try {
+                      opendoja.host.device.DoJaVibrationSupport.initialize(getApplicationContext());""",
               "EntryActivity logging checkpoint"
           )
           replace_once(
