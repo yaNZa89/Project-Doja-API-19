@@ -478,7 +478,101 @@ jobs:
               "previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();\n        final android.content.Context crashContext = activity.getApplicationContext();"
           )
 
-          print("Applied temporary crash diagnostics and enabled in-app report export.")
+          # Add an always-on, per-session diagnostic log. Android 4.4 restricts
+          # third-party access to the global log buffer, so this records all
+          # PocketDoJa lifecycle/import/launch events and stack traces directly.
+          session_logger = """    private static final Object POCKET_DOJA_LOG_LOCK = new Object();
+              private static java.io.File pocketDoJaSessionLog;
+
+              public static void logSession(android.content.Context context, String message, Throwable error) {
+                  synchronized (POCKET_DOJA_LOG_LOCK) {
+                      try {
+                          if (pocketDoJaSessionLog == null) {
+                              String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                                      .format(new java.util.Date());
+                              java.io.File downloads = android.os.Environment.getExternalStoragePublicDirectory(
+                                      android.os.Environment.DIRECTORY_DOWNLOADS);
+                              java.io.File folder = new java.io.File(downloads, "PocketDoJa");
+                              if (!folder.exists() && !folder.mkdirs()) {
+                                  folder = context.getExternalFilesDir("diagnostics");
+                              }
+                              if (folder == null || (!folder.exists() && !folder.mkdirs())) {
+                                  folder = new java.io.File(context.getFilesDir(), "diagnostics");
+                                  folder.mkdirs();
+                              }
+                              pocketDoJaSessionLog = new java.io.File(folder, "pocketdoja_logcat_" + stamp + ".txt");
+                          }
+                          String time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+                                  .format(new java.util.Date());
+                          StringBuilder line = new StringBuilder()
+                                  .append(time).append(" ")
+                                  .append(android.os.Process.myPid()).append("/")
+                                  .append(Thread.currentThread().getName()).append(" ")
+                                  .append(message == null ? "" : message).append("\\n");
+                          if (error != null) {
+                              java.io.StringWriter trace = new java.io.StringWriter();
+                              error.printStackTrace(new java.io.PrintWriter(trace));
+                              line.append(trace).append("\\n");
+                          }
+                          try (java.io.FileOutputStream out = new java.io.FileOutputStream(pocketDoJaSessionLog, true)) {
+                              out.write(line.toString().getBytes(java.nio.charset.Charset.forName("UTF-8")));
+                              out.flush();
+                          }
+                          if (error == null) android.util.Log.i("OpenDoJa", message);
+                          else android.util.Log.e("OpenDoJa", message, error);
+                      } catch (Throwable loggingFailure) {
+                          android.util.Log.e("OpenDoJa", "Could not write PocketDoJa session log", loggingFailure);
+                      }
+                  }
+              }
+
+          """
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "public class HomeActivity extends Activity {",
+              "public class HomeActivity extends Activity {\\n" + session_logger
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "        installPocketDoJaCrashReportHandler(this);",
+              "        installPocketDoJaCrashReportHandler(this);\\n        logSession(this, \\"APP_START build=\\" + DIAG_BUILD, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "    private void launchJam(File jam) {",
+              "    private void launchJam(File jam) {\\n        logSession(this, \\"GAME_SELECTED jam=\\" + (jam == null ? \\"null\\" : jam.getAbsolutePath()), null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {",
+              "    private void startBatchImport(Uri treeUri, List<DiscoveredFolder> folders) {\\n        logSession(this, \\"IMPORT_START folders=\\" + (folders == null ? 0 : folders.size()) + \\" uri=\\" + treeUri, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/HomeActivity.java",
+              "    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {",
+              "    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {\\n        logSession(this, \\"IMPORT_FOLDER_BEGIN documentId=\\" + targetDocumentId + \\" uri=\\" + treeUri, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "        EntryActivity.gameId = gameId;",
+              "        EntryActivity.gameId = gameId;\\n        HomeActivity.logSession(this, \\"GAME_ACTIVITY_START jam=\\" + gameId, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "        configureDebugLogging();",
+              "        configureDebugLogging();\\n        HomeActivity.logSession(this, \\"GAME_LAUNCH_BEGIN jam=\\" + gameId, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "            opendoja.host.OpenDoJaLog.info(EntryActivity.class, \\"jam launch returned normally: \\" + application);",
+              "            opendoja.host.OpenDoJaLog.info(EntryActivity.class, \\"jam launch returned normally: \\" + application);\\n            HomeActivity.logSession(this, \\"GAME_LAUNCH_RETURNED application=\\" + application, null);"
+          )
+          replace_once(
+              "app/src/main/java/opendoja/android/EntryActivity.java",
+              "            android.util.Log.e(\\"OpenDoJa\\", \\"game launch failed\\", throwable);",
+              "            android.util.Log.e(\\"OpenDoJa\\", \\"game launch failed\\", throwable);\\n            HomeActivity.logSession(this, \\"GAME_LAUNCH_FAILED\\", throwable);"
+          )
+          print("Applied always-on PocketDoJa session logging and crash diagnostics.")
           PY
 
           chmod +x "$SOURCE_ROOT/tools/build-api19-manual.sh"
