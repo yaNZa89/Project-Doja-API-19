@@ -562,7 +562,6 @@ jobs:
               """                total.errors.addAll(r.errors);
                           logSession(this, "IMPORT_FOLDER_RESULT games=" + r.games + " files=" + r.files + " skipped=" + r.skipped + " failed=" + r.failed, null);"""
           )
-          )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
               """        EntryActivity.gameId = gameId;""",
