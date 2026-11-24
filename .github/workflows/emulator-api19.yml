@@ -107,6 +107,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          # Preserve the APK downloaded earlier; checkout's default git clean
+          # would otherwise delete the untracked apk/ artifact directory.
+          clean: false
 
       - name: Install and launch PocketDoJa on Android 4.4
         shell: bash
