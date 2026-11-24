@@ -166,6 +166,114 @@ jobs:
           timeout 20s adb pull /data/local/tmp/screen.png diagnostics/emulator-screen.png
           timeout 45s adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
           echo "API 19 APK install-and-launch smoke test passed."
+      - name: Import Monster Hunter i from test-assets and verify game appears
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -Eeuo pipefail
+          mkdir -p diagnostics
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          test -s test-assets/mhi_9.jam
+          test -s test-assets/mhi_9.jar
+          test -s test-assets/mhi_9.sp
+          mkdir -p diagnostics/game-assets
+          cp test-assets/mhi_9.* diagnostics/game-assets/
+          adb shell mkdir -p /sdcard/PocketDoJaTest
+          adb push test-assets/mhi_9.jam /sdcard/PocketDoJaTest/
+          adb push test-assets/mhi_9.jar /sdcard/PocketDoJaTest/
+          adb push test-assets/mhi_9.sp /sdcard/PocketDoJaTest/
+          adb shell am force-stop com.shibesan.pocketdoja
+          adb shell monkey -p com.shibesan.pocketdoja 1 >/dev/null
+          sleep 8
+
+          # Dump the real UI and tap the visible menu button, then Import .JAM.
+          adb shell input tap 454 42
+          sleep 2
+          adb shell uiautomator dump /data/local/tmp/menu.xml >/dev/null
+          adb pull /data/local/tmp/menu.xml diagnostics/menu.xml
+          python3 - <<'PY' > diagnostics/menu-tap.txt
+          import re
+          s=open("diagnostics/menu.xml",encoding="utf-8").read()
+          nodes=re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"',s)
+          for text,bounds in nodes:
+              if "Import" in text and ".JAM" in text:
+                  nums=list(map(int,re.findall(r'\d+',bounds)))
+                  print((nums[0]+nums[2])//2,(nums[1]+nums[3])//2)
+                  break
+          else:
+              raise SystemExit("Import .JAM menu item not visible in UI hierarchy: "+str(nodes))
+          PY
+          read -r MX MY < diagnostics/menu-tap.txt
+          adb shell input tap "$MX" "$MY"
+          sleep 3
+
+          # The app's built-in picker starts at /sdcard. Open the staged folder.
+          adb shell uiautomator dump /data/local/tmp/picker.xml >/dev/null
+          adb pull /data/local/tmp/picker.xml diagnostics/picker-root.xml
+          python3 - <<'PY' > diagnostics/picker-folder-tap.txt
+          import re
+          s=open("diagnostics/picker-root.xml",encoding="utf-8").read()
+          nodes=re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"',s)
+          for text,bounds in nodes:
+              if text.strip() == "PocketDoJaTest/":
+                  n=list(map(int,re.findall(r'\d+',bounds)))
+                  print((n[0]+n[2])//2,(n[1]+n[3])//2)
+                  break
+          else:
+              raise SystemExit("Staged test folder not visible in picker: "+str(nodes))
+          PY
+          read -r FX FY < diagnostics/picker-folder-tap.txt
+          adb shell input tap "$FX" "$FY"
+          sleep 2
+
+          # Accept the selected folder, then confirm the app's import prompt.
+          adb shell uiautomator dump /data/local/tmp/picker-folder.xml >/dev/null
+          adb pull /data/local/tmp/picker-folder.xml diagnostics/picker-folder.xml
+          python3 - <<'PY' > diagnostics/picker-accept-tap.txt
+          import re
+          s=open("diagnostics/picker-folder.xml",encoding="utf-8").read()
+          nodes=re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"',s)
+          for text,bounds in nodes:
+              if text.startswith("Choose this folder:"):
+                  n=list(map(int,re.findall(r'\d+',bounds)))
+                  print((n[0]+n[2])//2,(n[1]+n[3])//2)
+                  break
+          else:
+              raise SystemExit("Choose-this-folder action not visible: "+str(nodes))
+          PY
+          read -r AX AY < diagnostics/picker-accept-tap.txt
+          adb shell input tap "$AX" "$AY"
+          sleep 5
+          adb shell uiautomator dump /data/local/tmp/import-confirm.xml >/dev/null
+          adb pull /data/local/tmp/import-confirm.xml diagnostics/import-confirm.xml
+          python3 - <<'PY' > diagnostics/import-confirm-tap.txt
+          import re
+          s=open("diagnostics/import-confirm.xml",encoding="utf-8").read()
+          nodes=re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"',s)
+          for text,bounds in nodes:
+              if text.strip() == "Import":
+                  n=list(map(int,re.findall(r'\d+',bounds)))
+                  print((n[0]+n[2])//2,(n[1]+n[3])//2)
+                  break
+          else:
+              raise SystemExit("Import confirmation button not visible: "+str(nodes))
+          PY
+          read -r IX IY < diagnostics/import-confirm-tap.txt
+          adb shell input tap "$IX" "$IY"
+          sleep 20
+
+          # Capture the actual result screen and full app log after import.
+          adb shell screencap -p /data/local/tmp/after-import.png
+          adb pull /data/local/tmp/after-import.png diagnostics/after-import.png
+          adb shell uiautomator dump /data/local/tmp/after-import.xml >/dev/null
+          adb pull /data/local/tmp/after-import.xml diagnostics/after-import.xml
+          adb logcat -d -v threadtime > diagnostics/logcat-after-import.txt
+          adb shell ls -lR /sdcard/Android/data/com.shibesan.pocketdoja/files > diagnostics/app-files-after-import.txt 2>&1 || true
+          if ! grep -qi "Monster Hunter" diagnostics/after-import.xml; then
+            echo "::error::Import flow completed but Monster Hunter title was not found on the PocketDoJa screen."
+            exit 1
+          fi
+          echo "Monster Hunter i is visible in PocketDoJa after importing JAM/JAR/SP."
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
