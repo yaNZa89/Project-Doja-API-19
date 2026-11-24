@@ -1,9 +1,6 @@
 name: PocketDoJa API 19 emulator smoke test
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
   workflow_run:
     workflows: ["Build PocketDoJa API 19 from uploaded ZIP"]
     types: [completed]
@@ -14,7 +11,7 @@ permissions:
 
 jobs:
   android-19-emulator:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
