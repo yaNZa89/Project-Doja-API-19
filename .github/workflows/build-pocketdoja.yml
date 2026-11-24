@@ -45,6 +45,88 @@ jobs:
           echo "SOURCE_ROOT=$SOURCE_ROOT" >> "$GITHUB_ENV"
           test -f "$SOURCE_ROOT/app/src/main/AndroidManifest.xml"
 
+      - name: Fix API 19 JAM scanner filesystem crash from user Logcat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          resolver = root / "opendoja/src/main/java/opendoja/host/JamMetadataResolver.java"
+          source = resolver.read_text(encoding="utf-8")
+          marker = "    public static Properties loadJamProperties(Path jamPath) throws IOException {\n"
+          overload = '''    public static Properties loadJamProperties(java.io.File jamFile) throws IOException {
+                  byte[] data;
+                  try (java.io.FileInputStream input = new java.io.FileInputStream(jamFile);
+                       java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                      byte[] buffer = new byte[8192];
+                      int count;
+                      while ((count = input.read(buffer)) != -1) {
+                          output.write(buffer, 0, count);
+                      }
+                      data = output.toByteArray();
+                  }
+                  CharacterCodingException lastCodingFailure = null;
+                  for (String charsetName : DoJaEncoding.defaultEncodingCandidates()) {
+                      try {
+                          return loadJamProperties(data, Charset.forName(charsetName));
+                      } catch (CharacterCodingException exception) {
+                          lastCodingFailure = exception;
+                      } catch (RuntimeException ignored) {
+                      }
+                  }
+                  if (lastCodingFailure != null) throw lastCodingFailure;
+                  throw new IllegalStateException("No JAM property charsets configured");
+              }
+
+          '''
+          if "loadJamProperties(java.io.File jamFile)" not in source:
+              if source.count(marker) != 1:
+                  raise SystemExit("Could not uniquely locate JAM metadata Path overload")
+              resolver.write_text(source.replace(marker, overload + marker, 1), encoding="utf-8")
+
+          home = root / "app/src/main/java/opendoja/android/HomeActivity.java"
+          source = home.read_text(encoding="utf-8")
+          old = "JamMetadataResolver.loadJamProperties(java.nio.file.Paths.get(jam.getAbsolutePath()))"
+          count = source.count(old)
+          if count < 2:
+              if "JamMetadataResolver.loadJamProperties(jam)" not in source:
+                  raise SystemExit(f"Expected scanner and icon metadata calls; found {count}")
+          else:
+              source = source.replace(old, "JamMetadataResolver.loadJamProperties(jam)")
+          nio_read = "new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(nameFile.getAbsolutePath()))).trim()"
+          safe_read = "new String(readAllBytesCompat(nameFile), java.nio.charset.Charset.forName(\"UTF-8\")).trim()"
+          if nio_read in source:
+              source = source.replace(nio_read, safe_read, 1)
+          if "private static byte[] readAllBytesCompat(java.io.File file)" not in source:
+              helper = '''    private static byte[] readAllBytesCompat(java.io.File file) throws IOException {
+                  try (java.io.FileInputStream input = new java.io.FileInputStream(file);
+                       java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                      byte[] buffer = new byte[8192];
+                      int count;
+                      while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                      return output.toByteArray();
+                  }
+              }
+
+          '''
+              insertion = "    private List<GameEntry> scanGames() {"
+              if source.count(insertion) != 1:
+                  raise SystemExit("Could not locate scanGames insertion point")
+              source = source.replace(insertion, helper + insertion, 1)
+          home.write_text(source, encoding="utf-8")
+
+          check = home.read_text(encoding="utf-8")
+          scan = check[check.index("private List<GameEntry> scanGames()"):check.index("private Bitmap loadGameIcon(")]
+          if "Paths.get(" in scan or "Files.readAllBytes(" in scan:
+              raise SystemExit("NIO filesystem call remains in scanGames")
+          if "JamMetadataResolver.loadJamProperties(jam)" not in scan:
+              raise SystemExit("JAM metadata scanner was not switched to java.io.File")
+          print("Patched JAM scan and icon metadata reads to use java.io.File/InputStream; no NIO default provider is invoked.")
+          PY
+
       - name: Inspect API 19 game scanner NIO calls
         shell: bash
         run: |
