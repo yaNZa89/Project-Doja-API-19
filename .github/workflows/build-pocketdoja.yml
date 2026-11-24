@@ -464,8 +464,18 @@ jobs:
           '''
           replace_once(
               home,
-              "        return sb.toString();",
-              session_section + "        return sb.toString();",
+              """        } catch (Throwable ignored) {
+                  }
+                  return sb.toString();
+              }
+
+              /** Surfaces manifest/HTTP diagnostics even when they are far outside the log tail. */""",
+              """        } catch (Throwable ignored) {
+                  }
+          """ + session_section + """        return sb.toString();
+              }
+
+              /** Surfaces manifest/HTTP diagnostics even when they are far outside the log tail. */""",
               "session log report section"
           )
 
