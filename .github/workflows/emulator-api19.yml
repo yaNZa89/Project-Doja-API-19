@@ -130,10 +130,11 @@ jobs:
             timeout 30s adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt || true
             exit 1
           fi
-          timeout 30s adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
-          timeout 20s adb pull /sdcard/window.xml diagnostics/emulator-window.xml || true
-          timeout 20s adb shell screencap -p /sdcard/screen.png
-          timeout 20s adb pull /sdcard/screen.png diagnostics/emulator-screen.png
+          timeout 30s adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+          timeout 20s adb pull /data/local/tmp/window.xml diagnostics/emulator-window.xml || true
+          # Android 4.4 images may mount /sdcard read-only; use writable app data temp.
+          timeout 20s adb shell screencap -p /data/local/tmp/screen.png
+          timeout 20s adb pull /data/local/tmp/screen.png diagnostics/emulator-screen.png
           timeout 45s adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
           echo "API 19 APK install-and-launch smoke test passed."
       - name: Collect runner and emulator diagnostics
