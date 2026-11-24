@@ -1,0 +1,13 @@
+AppName = Monster Hunter i for SH
+AppClass = main
+AppVer = 1.0.0
+LastModified = Sat, 03 May 2025 20:34:34
+SPsize = 56320
+AppSize = 854515
+PackageURL = http://mhi.gs.keitaiarchive.org/sh/i/mh/up/appli_904i/mhi_9.jar
+UseNetwork = http
+AppParam = 10000i/mh/
+DrawArea = 240x320
+CPName = (C)CAPCOM
+ProfileVer = DoJa-5.0
+TargetDevice = SH904i
