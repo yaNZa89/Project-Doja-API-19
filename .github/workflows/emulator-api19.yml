@@ -1,6 +1,7 @@
 name: PocketDoJa API 19 emulator smoke test
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Build PocketDoJa API 19 from uploaded ZIP"]
     types: [completed]
