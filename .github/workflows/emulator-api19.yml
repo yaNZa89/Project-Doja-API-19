@@ -123,8 +123,10 @@ jobs:
           sleep 15
           timeout 20s adb shell dumpsys activity activities > diagnostics/activity-after-launch.txt
           timeout 20s adb shell dumpsys window windows > diagnostics/windows-after-launch.txt
-          if ! timeout 15s adb shell pidof "$PACKAGE" | grep -q '[0-9]'; then
-            echo "::error::PocketDoJa process died after launch on API 19."
+          # Android 4.4's toolbox may not provide pidof. Verify the foreground
+          # Activity through ActivityManager instead.
+          if ! grep -E 'mResumedActivity:.*com\.shibesan\.pocketdoja|Run #[0-9]+: ActivityRecord.*com\.shibesan\.pocketdoja' diagnostics/activity-after-launch.txt; then
+            echo "::error::PocketDoJa is not present as a resumed/running activity on API 19."
             timeout 30s adb logcat -d -v threadtime > diagnostics/logcat-launch-failure.txt || true
             exit 1
           fi
