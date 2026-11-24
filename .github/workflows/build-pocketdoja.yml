@@ -360,6 +360,184 @@ jobs:
           "$JAVA_HOME/bin/java" -version
           "$JAVA_HOME/bin/java" -version >/dev/null 2>&1
 
+      - name: Harden runtime crash diagnostics and include session logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+
+          def replace_once(path, old, new, label):
+              data = path.read_text(encoding="utf-8")
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one marker, found {count}")
+              path.write_text(data.replace(old, new, 1), encoding="utf-8")
+
+          home = root / "app/src/main/java/opendoja/android/HomeActivity.java"
+          entry = root / "app/src/main/java/opendoja/android/EntryActivity.java"
+
+          # Include the always-on per-process session logs and crash reports in
+          # the diagnostics text. These are distinct from OpenDoJaLog's optional
+          # pocketdoja-log.txt and were being omitted by the old diagnostics path.
+          replace_once(
+              home,
+              """                report = buildDiagnosticsReport();
+                          out = writeDiagnostics(report);
+                          logOut = copyRuntimeLog();""",
+              """                logOut = copyRuntimeLog();
+                          report = buildDiagnosticsReport();
+                          out = writeDiagnostics(report);""",
+              "diagnostics capture order"
+          )
+
+          session_section = '''        // Always-on session logs are written independently by the Home and :game
+                  // processes. Include all recent files, not just OpenDoJaLog's optional log.
+                  sb.append("\\nPocketDoJa session logs (latest first):\\n");
+                  try {
+                      java.util.ArrayList<java.io.File> sessionLogs = new java.util.ArrayList<>();
+                      java.io.File downloadsPocketDoJa = new java.io.File(
+                              android.os.Environment.getExternalStoragePublicDirectory(
+                                      android.os.Environment.DIRECTORY_DOWNLOADS), "PocketDoJa");
+                      java.io.File[] roots = {
+                              downloadsPocketDoJa,
+                              getExternalFilesDir("diagnostics"),
+                              new java.io.File(getFilesDir(), "diagnostics")
+                      };
+                      for (java.io.File folder : roots) {
+                          if (folder == null) continue;
+                          java.io.File[] files = folder.listFiles();
+                          if (files == null) continue;
+                          for (java.io.File file : files) {
+                              if (file.isFile() && file.getName().startsWith("pocketdoja_logcat_")
+                                      && file.getName().endsWith(".txt")) {
+                                  boolean duplicate = false;
+                                  for (java.io.File seen : sessionLogs) {
+                                      if (seen.getCanonicalPath().equals(file.getCanonicalPath())) {
+                                          duplicate = true;
+                                          break;
+                                      }
+                                  }
+                                  if (!duplicate) sessionLogs.add(file);
+                              }
+                          }
+                      }
+                      java.util.Collections.sort(sessionLogs, (a, b) ->
+                              Long.compare(b.lastModified(), a.lastModified()));
+                      if (sessionLogs.isEmpty()) {
+                          sb.append("  (no session log files found)\\n");
+                      } else {
+                          for (int i = 0; i < Math.min(8, sessionLogs.size()); i++) {
+                              java.io.File file = sessionLogs.get(i);
+                              sb.append("\\n--- ").append(file.getAbsolutePath()).append(" ---\\n");
+                              sb.append(tail(file, 1200));
+                          }
+                      }
+                  } catch (Throwable sessionLogFailure) {
+                      sb.append("  could not enumerate session logs: ").append(sessionLogFailure).append('\\n');
+                  }
+
+                  sb.append("\\nPocketDoJa crash reports:\\n");
+                  try {
+                      java.io.File[] crashCandidates = {
+                              new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                                      android.os.Environment.DIRECTORY_DOWNLOADS), "pocketdoja-crash.txt"),
+                              new java.io.File(getExternalFilesDir(null), "pocketdoja-crash.txt"),
+                              new java.io.File(getFilesDir(), "pocketdoja-crash.txt")
+                      };
+                      boolean foundCrash = false;
+                      for (java.io.File crash : crashCandidates) {
+                          if (crash != null && crash.isFile()) {
+                              sb.append("--- ").append(crash.getAbsolutePath()).append(" ---\\n");
+                              sb.append(tail(crash, 500));
+                              foundCrash = true;
+                              break;
+                          }
+                      }
+                      if (!foundCrash) sb.append("  (no saved uncaught-crash report)\\n");
+                  } catch (Throwable crashReadFailure) {
+                      sb.append("  could not read crash report: ").append(crashReadFailure).append('\\n');
+                  }
+
+          '''
+          replace_once(
+              home,
+              "        return sb.toString();",
+              session_section + "        return sb.toString();",
+              "session log report section"
+          )
+
+          # If the optional runtime log is absent, still surface the latest
+          # always-on session log path in the diagnostics share sheet.
+          replace_once(
+              home,
+              """        if (!source.exists()) {
+                      return null;
+                  }
+                  java.io.File[] candidates = {""",
+              """        if (!source.exists()) {
+                      java.io.File folder = new java.io.File(
+                              android.os.Environment.getExternalStoragePublicDirectory(
+                                      android.os.Environment.DIRECTORY_DOWNLOADS), "PocketDoJa");
+                      java.io.File[] logs = folder.listFiles((dir, name) ->
+                              name.startsWith("pocketdoja_logcat_") && name.endsWith(".txt"));
+                      if (logs != null && logs.length > 0) {
+                          java.util.Arrays.sort(logs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                          return logs[0];
+                      }
+                      return null;
+                  }
+                  java.io.File[] candidates = {""",
+              "session log fallback"
+          )
+
+          # Save uncaught game-process exceptions into the always-on session log
+          # before delegating to Android's normal crash handler.
+          replace_once(
+              entry,
+              """            if (previousCrashHandler != null) {
+                          try {""",
+              """            try {
+                              HomeActivity.logSession(crashContext,
+                                      "UNCAUGHT_CRASH thread=" + thread.getName(), throwable);
+                          } catch (Throwable loggingFailure) {
+                              android.util.Log.e("OpenDoJa", "Could not append uncaught crash to session log", loggingFailure);
+                          }
+                          if (previousCrashHandler != null) {
+                          try {""",
+              "uncaught crash session logging"
+          )
+
+          # Narrow the point of failure during EntryActivity startup.
+          replace_once(
+              entry,
+              """        OpenDoJaLog.configure(OpenDoJaLog.Level.OFF);""",
+              """        OpenDoJaLog.configure(OpenDoJaLog.Level.OFF);
+                  HomeActivity.logSession(this, "GAME_ACTIVITY_INIT_LOGGING_READY", null);""",
+              "EntryActivity logging checkpoint"
+          )
+          replace_once(
+              entry,
+              """        setContentView(root);""",
+              """        setContentView(root);
+                  HomeActivity.logSession(this, "GAME_ACTIVITY_UI_READY", null);""",
+              "EntryActivity UI checkpoint"
+          )
+          replace_once(
+              entry,
+              """            launchThread.setDaemon(true);
+                      launchThread.start();""",
+              """            launchThread.setDaemon(true);
+                      HomeActivity.logSession(this, "GAME_THREAD_START name=" + launchThread.getName(), null);
+                      launchThread.start();""",
+              "game thread checkpoint"
+          )
+
+          print("Diagnostics now include per-process session logs, crash reports, and game-start checkpoints.")
+          PY
+
       - name: Build Android 4.4 API 19 debug APK
         shell: bash
         run: |
