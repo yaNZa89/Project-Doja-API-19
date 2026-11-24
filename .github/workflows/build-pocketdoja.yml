@@ -1,4 +1,5 @@
 name: Build PocketDoJa API 19 from uploaded ZIP
+# Rebuild trigger: validate the repaired emulator-test handoff.
 
 on:
   workflow_dispatch:
