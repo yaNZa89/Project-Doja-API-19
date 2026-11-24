@@ -131,11 +131,14 @@ jobs:
           PY
           fi
           sha256sum game-assets/* | tee diagnostics/game-assets-sha256.txt
-          adb shell mkdir -p /data/local/tmp/pocketdoja-game
-          adb push game-assets/mhi_9.jam /data/local/tmp/pocketdoja-game/mhi_9.jam
-          adb push game-assets/mhi_9.jar /data/local/tmp/pocketdoja-game/mhi_9.jar
-          adb push game-assets/mhi_9.sp /data/local/tmp/pocketdoja-game/mhi_9.sp
-          adb shell ls -l /data/local/tmp/pocketdoja-game | tee diagnostics/game-assets-on-emulator.txt
+          # Copy through run-as into app-private storage. /data/local/tmp is
+          # shell-owned and unreadable by the app UID, so passing that path to
+          # EntryActivity would produce a false "JAM not found" launch failure.
+          adb shell run-as com.shibesan.pocketdoja mkdir -p files/testgame
+          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.jam' < game-assets/mhi_9.jam
+          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.jar' < game-assets/mhi_9.jar
+          adb shell run-as com.shibesan.pocketdoja sh -c 'cat > files/testgame/mhi_9.sp' < game-assets/mhi_9.sp
+          adb shell run-as com.shibesan.pocketdoja ls -l files/testgame | tee diagnostics/game-assets-on-emulator.txt
       - name: Install and launch PocketDoJa on Android 4.4
         shell: bash
         timeout-minutes: 8
@@ -184,7 +187,7 @@ jobs:
           export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0:$PATH"
           adb logcat -c
           adb shell am force-stop com.shibesan.pocketdoja || true
-          timeout 45s adb shell am start -W -n com.shibesan.pocketdoja/opendoja.android.EntryActivity --es jamPath /data/local/tmp/pocketdoja-game/mhi_9.jam
+          timeout 45s adb shell am start -W -n com.shibesan.pocketdoja/opendoja.android.EntryActivity --es jamPath /data/data/com.shibesan.pocketdoja/files/testgame/mhi_9.jam
           sleep 45
           adb shell dumpsys activity activities > diagnostics/activity-after-monster-hunter.txt
           adb shell dumpsys window windows > diagnostics/windows-after-monster-hunter.txt
