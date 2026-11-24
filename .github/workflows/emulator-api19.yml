@@ -176,6 +176,30 @@ jobs:
           timeout 20s adb pull /data/local/tmp/screen.png diagnostics/emulator-screen.png
           timeout 45s adb logcat -d -v threadtime > diagnostics/logcat-api19.txt
           echo "API 19 APK install-and-launch smoke test passed."
+      - name: Launch Monster Hunter directly through EntryActivity
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -Eeuo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0:$PATH"
+          adb logcat -c
+          adb shell am force-stop com.shibesan.pocketdoja || true
+          timeout 45s adb shell am start -W -n com.shibesan.pocketdoja/opendoja.android.EntryActivity --es jamPath /data/local/tmp/pocketdoja-game/mhi_9.jam
+          sleep 45
+          adb shell dumpsys activity activities > diagnostics/activity-after-monster-hunter.txt
+          adb shell dumpsys window windows > diagnostics/windows-after-monster-hunter.txt
+          adb shell screencap -p /data/local/tmp/monster-hunter-screen.png
+          adb pull /data/local/tmp/monster-hunter-screen.png diagnostics/monster-hunter-screen.png
+          adb logcat -d -v threadtime > diagnostics/logcat-monster-hunter.txt
+          if grep -E 'FATAL EXCEPTION|Fatal signal|ANR in com\.shibesan\.pocketdoja' diagnostics/logcat-monster-hunter.txt; then
+            echo "::error::Monster Hunter launch produced a fatal error; see logcat-monster-hunter.txt"
+            exit 1
+          fi
+          if ! grep -E 'mResumedActivity:.*opendoja\.android\.EntryActivity|ActivityRecord.*opendoja\.android\.EntryActivity' diagnostics/activity-after-monster-hunter.txt; then
+            echo "::error::EntryActivity did not remain active after the Monster Hunter launch attempt."
+            exit 1
+          fi
+          echo "Monster Hunter launch attempt captured; inspect screenshot and logcat to determine whether the game reached its menu."
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
