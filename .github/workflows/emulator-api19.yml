@@ -97,6 +97,11 @@ jobs:
           timeout 15s adb shell settings put global transition_animation_scale 0 || true
           timeout 15s adb shell settings put global animator_duration_scale 0 || true
           echo "Android 4.4 API 19 boot completed."
+      - name: Check out test descriptor and workflow assets
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
       - name: Prepare and stage Monster Hunter DoJa test package
         shell: bash
         timeout-minutes: 5
