@@ -81,13 +81,17 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           timeout 12m "$SDKMANAGER" --install "platform-tools" "emulator" "build-tools;35.0.0" "system-images;android-19;default;x86"
           echo "no" | "$AVDMANAGER" create avd -n pocketdoja-api19 -k "system-images;android-19;default;x86" -d "Nexus One" --force
+          # Explicitly provision a writable emulated SD card for API 19.
+          SD_CARD_IMAGE="$RUNNER_TEMP/pocketdoja-api19-sdcard.img"
+          "$SDK/emulator/mksdcard" 512M "$SD_CARD_IMAGE"
+          printf "\nhw.sdCard=yes\nsdcard.size=512M\n" >> "$HOME/.android/avd/pocketdoja-api19.avd/config.ini"
 
           # GitHub-hosted runners expose /dev/kvm as root:kvm. Grant the runner
           # process access before deciding to fall back to QEMU TCG.
           if [ -e /dev/kvm ]; then
             sudo chmod a+rw /dev/kvm || true
           fi
-          EMULATOR_ARGS=(-avd pocketdoja-api19 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -no-snapshot -wipe-data -no-metrics)
+          EMULATOR_ARGS=(-avd pocketdoja-api19 -sdcard "$SD_CARD_IMAGE" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -no-snapshot -wipe-data -no-metrics)
           if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
             EMULATOR_ARGS+=(-accel on)
             echo "KVM device is accessible; hardware acceleration enabled." | tee diagnostics/acceleration.txt
@@ -178,10 +182,11 @@ jobs:
           test -s test-assets/mhi_9.sp
           mkdir -p diagnostics/game-assets
           cp test-assets/mhi_9.* diagnostics/game-assets/
+          adb shell mount > diagnostics/mounts-before-import.txt
           adb shell mkdir -p /sdcard/PocketDoJaTest
-          adb push test-assets/mhi_9.jam /sdcard/PocketDoJaTest/
-          adb push test-assets/mhi_9.jar /sdcard/PocketDoJaTest/
-          adb push test-assets/mhi_9.sp /sdcard/PocketDoJaTest/
+          adb push test-assets/mhi_9.jam /sdcard/PocketDoJaTest/mhi_9.jam
+          adb push test-assets/mhi_9.jar /sdcard/PocketDoJaTest/mhi_9.jar
+          adb push test-assets/mhi_9.sp /sdcard/PocketDoJaTest/mhi_9.sp
           adb shell am force-stop com.shibesan.pocketdoja
           adb shell monkey -p com.shibesan.pocketdoja 1 >/dev/null
           sleep 8
