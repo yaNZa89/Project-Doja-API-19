@@ -507,16 +507,14 @@ jobs:
           # before delegating to Android's normal crash handler.
           replace_once(
               entry,
-              """            if (previousCrashHandler != null) {
-                          try {""",
+              """            if (previousCrashHandler != null) {""",
               """            try {
-                              HomeActivity.logSession(crashContext,
-                                      "UNCAUGHT_CRASH thread=" + thread.getName(), throwable);
-                          } catch (Throwable loggingFailure) {
-                              android.util.Log.e("OpenDoJa", "Could not append uncaught crash to session log", loggingFailure);
-                          }
-                          if (previousCrashHandler != null) {
-                          try {""",
+                          HomeActivity.logSession(crashContext,
+                                  "UNCAUGHT_CRASH thread=" + thread.getName(), throwable);
+                      } catch (Throwable loggingFailure) {
+                          android.util.Log.e("OpenDoJa", "Could not append uncaught crash to session log", loggingFailure);
+                      }
+                      if (previousCrashHandler != null) {""",
               "uncaught crash session logging"
           )
 
