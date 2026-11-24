@@ -109,8 +109,24 @@ jobs:
           set -Eeuo pipefail
           mkdir -p game-assets diagnostics
           cp test-assets/mhi_9.jam game-assets/mhi_9.jam
-          JAR_URL="http://mhi.gs.keitaiarchive.org/sh/i/mh/up/appli_904i/mhi_9.jar"
-          curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$JAR_URL" -o game-assets/mhi_9.jar
+          JAR_PATH="/sh/i/mh/up/appli_904i/mhi_9.jar"
+          JAR_OK=0
+          for SCHEME in https http; do
+            URL="${SCHEME}://mhi.gs.keitaiarchive.org${JAR_PATH}"
+            echo "Trying Monster Hunter package source: ${URL}"
+            if curl --fail --show-error --location --http1.1 --user-agent "Mozilla/5.0 PocketDoJa-API19-Test" --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 180 --write-out "HTTP=%{http_code} bytes=%{size_download}\n" "$URL" -o game-assets/mhi_9.jar.tmp; then
+              if [ "$(stat -c %s game-assets/mhi_9.jar.tmp)" -gt 100000 ]; then
+                mv game-assets/mhi_9.jar.tmp game-assets/mhi_9.jar
+                JAR_OK=1
+                break
+              fi
+              echo "Source returned an empty/undersized JAR; trying next transport."
+            fi
+          done
+          if [ "$JAR_OK" -ne 1 ]; then
+            echo "::error::Both HTTPS and HTTP source attempts failed to provide the game JAR."
+            exit 1
+          fi
           echo "29239c996d454c53bc32af959537eb76c72f25ece24b8207b8034daa35d8948e  game-assets/mhi_9.jar" | sha256sum --check -
           SP_URL="http://mhi.gs.keitaiarchive.org/sh/i/mh/up/appli_904i/mhi_9.sp"
           if curl --fail --location --retry 2 --connect-timeout 15 --max-time 90 "$SP_URL" -o game-assets/mhi_9.sp.tmp; then
