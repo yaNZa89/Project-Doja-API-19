@@ -556,6 +556,7 @@ jobs:
               """    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {""",
               """    private ImportResult importJamFolder(Uri treeUri, String targetDocumentId) {
                   logSession(this, "IMPORT_FOLDER_BEGIN documentId=" + targetDocumentId + " uri=" + treeUri, null);"""
+          )
           replace_once(
               "app/src/main/java/opendoja/android/EntryActivity.java",
               """        EntryActivity.gameId = gameId;""",
