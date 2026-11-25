@@ -192,16 +192,18 @@ jobs:
           sleep 8
 
           # Dump the real UI and tap the visible menu button, then Import .JAM.
-          adb shell input tap 454 42
+          adb shell input tap 417 42
           sleep 2
           adb shell uiautomator dump /data/local/tmp/menu.xml >/dev/null
           adb pull /data/local/tmp/menu.xml diagnostics/menu.xml
+          adb shell screencap -p /data/local/tmp/menu-screen.png
+          adb pull /data/local/tmp/menu-screen.png diagnostics/menu-screen.png
           python3 - <<'PY' > diagnostics/menu-tap.txt
           import re
           s=open("diagnostics/menu.xml",encoding="utf-8").read()
           nodes=re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"',s)
           for text,bounds in nodes:
-              if "Import" in text and ".JAM" in text:
+              if "Import" in text and ".JAM" in text and "No installed games" not in text:
                   nums=list(map(int,re.findall(r'\d+',bounds)))
                   print((nums[0]+nums[2])//2,(nums[1]+nums[3])//2)
                   break
