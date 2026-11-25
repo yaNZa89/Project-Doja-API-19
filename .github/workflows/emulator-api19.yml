@@ -279,6 +279,52 @@ jobs:
             exit 1
           fi
           echo "Monster Hunter i is visible in PocketDoJa after importing JAM/JAR/SP."
+      - name: Launch Monster Hunter i and capture force-close Logcat
+        if: always()
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          mkdir -p diagnostics
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          PACKAGE="com.shibesan.pocketdoja"
+          # Start with a clean buffer so the TXT identifies this launch attempt.
+          adb logcat -c || true
+          adb shell uiautomator dump /data/local/tmp/game-list-before-launch.xml >/dev/null 2>&1 || true
+          adb pull /data/local/tmp/game-list-before-launch.xml diagnostics/game-list-before-launch.xml || true
+          python3 - <<'PY' > diagnostics/monster-hunter-tap.txt
+          import re, sys
+          p = "diagnostics/game-list-before-launch.xml"
+          try:
+              s = open(p, encoding="utf-8").read()
+          except OSError as e:
+              raise SystemExit("Could not read game list UI dump: " + str(e))
+          nodes = re.findall(r'<node[^>]*text="([^"]*)"[^>]*bounds="([^"]+)"', s)
+          matches = [(t,b) for t,b in nodes if "Monster Hunter" in t]
+          if not matches:
+              raise SystemExit("Monster Hunter title is not visible; UI nodes: " + repr(nodes[:80]))
+          text, bounds = matches[0]
+          n = list(map(int, re.findall(r'\d+', bounds)))
+          if len(n) != 4:
+              raise SystemExit("Invalid bounds for Monster Hunter row: " + bounds)
+          print((n[0]+n[2])//2, (n[1]+n[3])//2)
+          print("Matched UI text: " + text, file=sys.stderr)
+          PY
+          read -r GX GY < diagnostics/monster-hunter-tap.txt
+          adb shell input tap "$GX" "$GY"
+          sleep 25
+          adb shell dumpsys activity activities > diagnostics/activity-after-game-launch.txt 2>&1 || true
+          adb shell dumpsys window windows > diagnostics/windows-after-game-launch.txt 2>&1 || true
+          adb shell ps > diagnostics/processes-after-game-launch.txt 2>&1 || true
+          adb logcat -d -v threadtime > diagnostics/logcat-monster-hunter-launch.txt 2>&1 || true
+          if grep -Eqi 'FATAL EXCEPTION|Fatal signal|has died|Process: .*com\.shibesan\.pocketdoja' diagnostics/logcat-monster-hunter-launch.txt; then
+            echo "GAME_LAUNCH_RESULT=CRASH_OR_FATAL_LOG_FOUND" | tee diagnostics/game-launch-result.txt
+          else
+            echo "GAME_LAUNCH_RESULT=NO_FATAL_MARKER_IN_LOGCAT" | tee diagnostics/game-launch-result.txt
+          fi
+          adb shell screencap -p /data/local/tmp/after-game-launch.png || true
+          adb pull /data/local/tmp/after-game-launch.png diagnostics/after-game-launch.png || true
+          echo "Monster Hunter i launch attempt captured; inspect TXT Logcat and activity snapshot for the actual result."
       - name: Collect runner and emulator diagnostics
         if: always()
         shell: bash
